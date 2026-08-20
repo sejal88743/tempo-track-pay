@@ -671,10 +671,10 @@ export function upsertAttendance(rec: AttendanceRecord, options?: { skipSundayCh
   cache.attendance = list;
   saveLocal("tsa_attendance", list);
   bump();
-  if (sb)
-    sb.from("attendance")
-      .upsert(attendanceToDb(rec))
-      .then(({ error }) => error && warn("attendance.upsert", error));
+  const row = attendanceToDb(rec);
+  if (sb) void pushAttendanceRow(row);
+  else queuePending(row);
+
   fire("Attendance");
 
   // Automatic Sunday Rule trigger:
