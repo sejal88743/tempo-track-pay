@@ -23,6 +23,7 @@ import {
   upsertEmployee,
   todayString,
   newId,
+  normalizeDate,
   useCloudSync,
   type Employee,
 } from "@/lib/store";
@@ -38,7 +39,7 @@ export const Route = createFileRoute("/worker")({
 });
 
 function WorkerPage() {
-  useCloudSync(); // pull latest employees (with face descriptors) from cloud
+  const syncVersion = useCloudSync(); // pull latest employees & attendance from cloud
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("scan");
   const [identified, setIdentified] = useState<Employee | null>(null);
@@ -399,23 +400,50 @@ function WorkerPage() {
       accuracy_meters: acc,
     });
 
-    // Calculate this month's present count
+    // Calculate this month's present count (deduplicated by date)
     const monthPrefix = today.slice(0, 7); // "YYYY-MM"
     const allAtt = getAttendance();
-    const monthAtt = allAtt.filter(
-      (r) =>
-        r.employee_id === emp.id &&
-        r.date.startsWith(monthPrefix) &&
-        r.shift === "morning" &&
-        (r.status === "present" || r.status === "late"),
+    const presentDates = new Set(
+      allAtt
+        .filter(
+          (r) =>
+            r.employee_id === emp.id &&
+            normalizeDate(r.date).startsWith(monthPrefix) &&
+            r.shift === "morning" &&
+            (r.status === "present" || r.status === "late"),
+        )
+        .map((r) => normalizeDate(r.date)),
     );
     const todayDate = new Date(today + "T00:00:00");
     const daysElapsed = todayDate.getDate(); // 1-based day of month
-    setMonthCount({ present: monthAtt.length, total: daysElapsed });
+    setMonthCount({ present: presentDates.size, total: daysElapsed });
 
     setStep("done");
     toast.success(`✅ ${emp.full_name} ki attendance mark ho gayi!`);
   };
+
+  // Keep monthCount reactive to realtime / Supabase sync on worker screen
+  useEffect(() => {
+    if (identified && step === "done") {
+      const today = todayString();
+      const monthPrefix = today.slice(0, 7);
+      const allAtt = getAttendance();
+      const presentDates = new Set(
+        allAtt
+          .filter(
+            (r) =>
+              r.employee_id === identified.id &&
+              normalizeDate(r.date).startsWith(monthPrefix) &&
+              r.shift === "morning" &&
+              (r.status === "present" || r.status === "late"),
+          )
+          .map((r) => normalizeDate(r.date)),
+      );
+      const todayDate = new Date(today + "T00:00:00");
+      const daysElapsed = todayDate.getDate();
+      setMonthCount({ present: presentDates.size, total: daysElapsed });
+    }
+  }, [syncVersion, identified, step]);
 
   // ── MONTH DETAIL (date-wise 1/0 + salary) ────────────────────────────────
   const buildMonthDetail = (emp: Employee) => {
@@ -425,9 +453,19 @@ function WorkerPage() {
     const daysInMonth = new Date(y, m, 0).getDate();
     const perDayBase = emp.monthly_salary > 0 ? emp.monthly_salary / daysInMonth : 0;
     const recs = getAttendance().filter(
-      (r) => r.employee_id === emp.id && r.date.startsWith(monthPrefix) && r.shift === "morning",
+      (r) =>
+        r.employee_id === emp.id &&
+        normalizeDate(r.date).startsWith(monthPrefix) &&
+        r.shift === "morning",
     );
-    const byDate = new Map(recs.map((r) => [r.date, r]));
+    const byDate = new Map<string, (typeof recs)[0]>();
+    for (const r of recs) {
+      const normD = normalizeDate(r.date);
+      const prev = byDate.get(normD);
+      if (!prev || r.status === "present" || r.status === "late") {
+        byDate.set(normD, r);
+      }
+    }
     const days: { date: string; day: number; value: 0 | 1; amount: number }[] = [];
     let presentDays = 0;
     let salary = 0;

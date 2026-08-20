@@ -10,6 +10,7 @@ import {
   getSalaries,
   daysInMonth,
   newId,
+  normalizeDate,
   type SalaryRecord,
 } from "./store";
 
@@ -22,7 +23,10 @@ export function generateSalaries(month: string): SalaryRecord[] {
   const emps = getEmployees().filter((e) => e.active);
 
   const att = getAttendance().filter(
-    (r) => r.shift === "morning" && r.date >= monthStart && r.date <= monthEnd,
+    (r) =>
+      r.shift === "morning" &&
+      normalizeDate(r.date) >= monthStart &&
+      normalizeDate(r.date) <= monthEnd,
   );
 
   const leaves = getLeaves().filter(
@@ -41,7 +45,18 @@ export function generateSalaries(month: string): SalaryRecord[] {
 
   const records: SalaryRecord[] = emps.map((e) => {
     const myAtt = att.filter((r) => r.employee_id === e.id);
-    const presentAtt = myAtt.filter((r) => r.status === "present" || r.status === "late");
+    // Deduplicate by date so a single day is never counted multiple times
+    const dateMap = new Map<string, (typeof att)[0]>();
+    for (const r of myAtt) {
+      const d = normalizeDate(r.date);
+      const prev = dateMap.get(d);
+      if (!prev || r.status === "present" || r.status === "late") {
+        dateMap.set(d, r);
+      }
+    }
+    const presentAtt = Array.from(dateMap.values()).filter(
+      (r) => r.status === "present" || r.status === "late",
+    );
     const present = presentAtt.length;
 
     const myLeaves = leaves.filter((l) => l.employee_id === e.id);

@@ -10,7 +10,15 @@ import {
   CalendarOff,
   Fingerprint,
 } from "lucide-react";
-import { getEmployees, getAttendance, getAdvances, getLeaves, todayString } from "@/lib/store";
+import {
+  getEmployees,
+  getAttendance,
+  getAdvances,
+  getLeaves,
+  todayString,
+  normalizeDate,
+  useCloudSync,
+} from "@/lib/store";
 
 export const Route = createFileRoute("/_admin/dashboard")({ component: Dashboard });
 
@@ -45,6 +53,7 @@ function Stat({
 }
 
 function Dashboard() {
+  const syncVersion = useCloudSync();
   const [counts, setCounts] = useState({
     total: 0,
     biometricEnrolled: 0,
@@ -57,7 +66,9 @@ function Dashboard() {
   useEffect(() => {
     const emps = getEmployees().filter((e) => e.active);
     const today = todayString();
-    const todayAtt = getAttendance().filter((r) => r.date === today && r.shift === "morning");
+    const todayAtt = getAttendance().filter(
+      (r) => normalizeDate(r.date) === today && r.shift === "morning",
+    );
     const present = todayAtt.filter((r) => r.status === "present" || r.status === "late").length;
     const absent = todayAtt.filter((r) => r.status === "absent").length;
     const pendingAdv = getAdvances().filter((a) => a.status === "pending").length;
@@ -71,7 +82,7 @@ function Dashboard() {
       pendingAdv,
       pendingLeaves,
     });
-  }, []);
+  }, [syncVersion]);
 
   return (
     <div className="p-3 space-y-3">
