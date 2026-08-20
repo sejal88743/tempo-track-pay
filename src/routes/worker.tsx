@@ -386,6 +386,7 @@ function WorkerPage() {
       out_time: now,
       location_ok: true,
       method: "face",
+      marked_by: "worker",
       latitude: lat,
       longitude: lng,
       accuracy_meters: acc,

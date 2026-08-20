@@ -101,6 +101,7 @@ function AttendancePage() {
       ...patch,
       date: norm,
       method: patch.method ?? "manual",
+      marked_by: "admin",
     } as AttendanceRecord;
     upsertAttendance(next);
     reload();
@@ -117,6 +118,7 @@ function AttendancePage() {
           shift,
           status: "present",
           method: "manual",
+          marked_by: "admin",
         });
       }
     });
@@ -136,6 +138,7 @@ function AttendancePage() {
         shift,
         status: "absent",
         method: "manual",
+        marked_by: "admin",
         daily_salary_override: cur?.daily_salary_override,
       });
     });
