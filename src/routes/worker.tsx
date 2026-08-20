@@ -63,6 +63,7 @@ function WorkerPage() {
   // Monthly attendance count shown on done screen
   const [monthCount, setMonthCount] = useState<{ present: number; total: number } | null>(null);
   const [showMonthDetail, setShowMonthDetail] = useState(false);
+  const [blockedEmp, setBlockedEmp] = useState<Employee | null>(null);
   const [mounted, setMounted] = useState(false);
 
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -366,6 +367,12 @@ function WorkerPage() {
     const existing = getAttendanceForDate(today).find(
       (r) => r.employee_id === emp.id && r.shift === shift,
     );
+    // Admin ne aaj is worker ko ABSENT mark kiya ho to worker khud attendance nahi laga sakta.
+    if (existing && existing.status === "absent" && existing.marked_by === "admin") {
+      setBlockedEmp(emp);
+      setStep("scan");
+      return;
+    }
     // Capture fresh GPS at mark time
     let lat: number | undefined, lng: number | undefined, acc: number | undefined;
     try {
@@ -386,6 +393,7 @@ function WorkerPage() {
       out_time: now,
       location_ok: true,
       method: "face",
+      marked_by: "worker",
       latitude: lat,
       longitude: lng,
       accuracy_meters: acc,
@@ -924,6 +932,25 @@ function WorkerPage() {
             </div>
           );
         })()}
+
+      {/* ── ADMIN-ABSENT BLOCK POPUP ───────────────────────────────────────── */}
+      {blockedEmp && (
+        <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-800 rounded-2xl w-full max-w-sm p-6 space-y-4 text-center border border-red-500/30 shadow-2xl">
+            <div className="size-14 rounded-full bg-red-500/20 flex items-center justify-center mx-auto">
+              <ScanFace className="size-7 text-red-400" />
+            </div>
+            <h3 className="text-3xl font-extrabold text-red-400">CONTACT TO BOSS</h3>
+            <p className="text-white/70 text-sm">
+              {blockedEmp.full_name} ki aaj ki chutti admin ne mark ki hai. Attendance ab sirf admin
+              hi badal sakta hai.
+            </p>
+            <Button className="w-full" variant="secondary" onClick={() => setBlockedEmp(null)}>
+              Theek Hai
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* ── NO-MATCH POPUP ─────────────────────────────────────────────────── */}
       {showNoMatchPopup && (

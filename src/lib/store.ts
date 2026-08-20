@@ -54,6 +54,8 @@ export type AttendanceRecord = {
   out_time?: string;
   location_ok?: boolean;
   method?: "manual" | "fingerprint" | "face" | "auto-sunday" | "auto-absent";
+  /** Kisne mark kiya: admin panel se, worker ne khud scan karke, ya auto rule ne */
+  marked_by?: "admin" | "worker" | "auto";
   device_id?: string;
   latitude?: number;
   longitude?: number;
@@ -249,6 +251,7 @@ function dbToAttendance(r: Row): AttendanceRecord {
     out_time: r.out_time ?? undefined,
     location_ok: r.location_ok ?? undefined,
     method: (r.method as AttendanceRecord["method"]) ?? undefined,
+    marked_by: (r.marked_by as AttendanceRecord["marked_by"]) ?? undefined,
     device_id: r.device_id ?? undefined,
     latitude: r.latitude ?? undefined,
     longitude: r.longitude ?? undefined,
@@ -268,6 +271,13 @@ function attendanceToDb(a: AttendanceRecord): Row {
     out_time: a.out_time ?? null,
     location_ok: a.location_ok ?? null,
     method: a.method ?? "manual",
+    marked_by:
+      a.marked_by ??
+      (a.method === "face" || a.method === "fingerprint"
+        ? "worker"
+        : a.method === "auto-sunday" || a.method === "auto-absent"
+          ? "auto"
+          : "admin"),
     device_id: a.device_id ?? getDeviceId(),
     latitude: a.latitude ?? null,
     longitude: a.longitude ?? null,

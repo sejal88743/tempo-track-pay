@@ -155,6 +155,8 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
         shift: "morning",
         status,
         in_time: existing?.in_time ?? (status === "present" ? new Date().toISOString() : undefined),
+        method: "manual",
+        marked_by: "admin",
       });
       setRevision((r) => r + 1);
     },
