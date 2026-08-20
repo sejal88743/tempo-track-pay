@@ -63,6 +63,7 @@ function WorkerPage() {
   // Monthly attendance count shown on done screen
   const [monthCount, setMonthCount] = useState<{ present: number; total: number } | null>(null);
   const [showMonthDetail, setShowMonthDetail] = useState(false);
+  const [blockedEmp, setBlockedEmp] = useState<Employee | null>(null);
   const [mounted, setMounted] = useState(false);
 
   const [countdown, setCountdown] = useState<number | null>(null);
