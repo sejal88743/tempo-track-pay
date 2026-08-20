@@ -271,6 +271,13 @@ function attendanceToDb(a: AttendanceRecord): Row {
     out_time: a.out_time ?? null,
     location_ok: a.location_ok ?? null,
     method: a.method ?? "manual",
+    marked_by:
+      a.marked_by ??
+      (a.method === "face" || a.method === "fingerprint"
+        ? "worker"
+        : a.method === "auto-sunday" || a.method === "auto-absent"
+          ? "auto"
+          : "admin"),
     device_id: a.device_id ?? getDeviceId(),
     latitude: a.latitude ?? null,
     longitude: a.longitude ?? null,
