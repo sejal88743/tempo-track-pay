@@ -473,6 +473,95 @@ function warn(where: string, err: any) {
   console.error(`[cloud-write] ${where}`, err?.message ?? err);
 }
 
+// ---------- durable attendance writes ----------
+// Attendance kabhi gayab na ho: har row (employee_id, attendance_date, shift)
+// unique key par upsert hoti hai, aur fail hone par queue me rakh kar retry hoti hai.
+const PENDING_KEY = "tsa_pending_attendance";
+type PendingRow = Row;
+
+function loadPending(): PendingRow[] {
+  if (!isBrowser) return [];
+  try {
+    return JSON.parse(localStorage.getItem(PENDING_KEY) ?? "[]") as PendingRow[];
+  } catch {
+    return [];
+  }
+}
+function savePending(rows: PendingRow[]) {
+  saveLocal(PENDING_KEY, rows);
+}
+function queuePending(row: PendingRow) {
+  const rows = loadPending().filter(
+    (r) =>
+      !(
+        r.employee_id === row.employee_id &&
+        r.attendance_date === row.attendance_date &&
+        r.shift === row.shift
+      ),
+  );
+  rows.push(row);
+  savePending(rows);
+}
+function dequeuePending(row: PendingRow) {
+  savePending(
+    loadPending().filter(
+      (r) =>
+        !(
+          r.employee_id === row.employee_id &&
+          r.attendance_date === row.attendance_date &&
+          r.shift === row.shift
+        ),
+    ),
+  );
+}
+
+async function pushAttendanceRow(row: PendingRow): Promise<boolean> {
+  if (!sb) return false;
+  // id ko conflict target se hataayein — dusre device par bani row ka id alag ho sakta hai.
+  const { id: _id, ...payload } = row;
+  const { data, error } = await sb
+    .from("attendance")
+    .upsert(payload, { onConflict: "employee_id,attendance_date,shift" })
+    .select()
+    .maybeSingle();
+  if (error) {
+    warn("attendance.upsert", error);
+    queuePending(row);
+    return false;
+  }
+  dequeuePending(row);
+  if (data) {
+    const saved = dbToAttendance(data as Row);
+    const list = [...cache.attendance];
+    const i = list.findIndex(
+      (r) =>
+        r.employee_id === saved.employee_id &&
+        normalizeDate(r.date) === normalizeDate(saved.date) &&
+        r.shift === saved.shift,
+    );
+    if (i >= 0) list[i] = saved;
+    else list.unshift(saved);
+    cache.attendance = list;
+    saveLocal("tsa_attendance", list);
+    bump();
+  }
+  return true;
+}
+
+export async function flushPendingAttendance(): Promise<number> {
+  if (!sb || !isBrowser) return 0;
+  const rows = loadPending();
+  let ok = 0;
+  for (const r of rows) if (await pushAttendanceRow(r)) ok++;
+  return ok;
+}
+
+if (isBrowser) {
+  window.addEventListener("online", () => void flushPendingAttendance());
+  setInterval(() => void flushPendingAttendance(), 30000);
+}
+
+
 // ---------- employees ----------
 
 export function getEmployees(): Employee[] {
