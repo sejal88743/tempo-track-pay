@@ -1,0 +1,61 @@
+10Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.Understand this error
+0i8wy8tbht2ow.js:2 Unrecognized feature: 'ambient-light-sensor'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+0i8wy8tbht2ow.js:2 Unrecognized feature: 'battery'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+0i8wy8tbht2ow.js:2 Unrecognized feature: 'execution-while-not-rendered'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+0i8wy8tbht2ow.js:2 Unrecognized feature: 'execution-while-out-of-viewport'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+0i8wy8tbht2ow.js:2 Unrecognized feature: 'layout-animations'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+0i8wy8tbht2ow.js:2 Unrecognized feature: 'legacy-image-formats'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+0i8wy8tbht2ow.js:2 Unrecognized feature: 'navigation-override'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+0i8wy8tbht2ow.js:2 Unrecognized feature: 'oversized-images'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+0i8wy8tbht2ow.js:2 Unrecognized feature: 'publickey-credentials'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+0i8wy8tbht2ow.js:2 Unrecognized feature: 'speaker-selection'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+0i8wy8tbht2ow.js:2 Unrecognized feature: 'unoptimized-images'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+0i8wy8tbht2ow.js:2 Unrecognized feature: 'unsized-media'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+0i8wy8tbht2ow.js:2 Unrecognized feature: 'pointer-lock'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+0i8wy8tbht2ow.js:2 Allow attribute will take precedence over 'allowfullscreen'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+0i8wy8tbht2ow.js:2 Allow attribute will take precedence over 'allowpaymentrequest'.
+C @ 0i8wy8tbht2ow.js:2Understand this warning
+16Failed to execute 'postMessage' on 'DOMWindow': The target origin provided ('<URL>') does not match the recipient window's origin ('<URL>').Understand this warning
+70e~imozein5eb.js:21 Haven't heard from the server in a while, resetting connection...
+(anonymous) @ 0e~imozein5eb.js:21Understand this warning
+stallwart.build.js:1 stallwart: failed ping 1
+20e~imozein5eb.js:21 Haven't heard from the server in a while, resetting connection...
+(anonymous) @ 0e~imozein5eb.js:21Understand this warning
+tempo-track-pay:1 Access to fetch at 'https://sp.replit.com/v1/t' from origin 'https://replit.com' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
+sp.replit.com/v1/t:1  Failed to load resource: net::ERR_FAILEDUnderstand this error
+tempo-track-pay:1 Access to fetch at 'https://sp.replit.com/v1/t' from origin 'https://replit.com' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
+sp.replit.com/v1/t:1  Failed to load resource: net::ERR_FAILEDUnderstand this error
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'ambient-light-sensor'.Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'battery'.Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'execution-while-not-rendered'.Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'execution-while-out-of-viewport'.Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'layout-animations'.Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'legacy-image-formats'.Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'navigation-override'.Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'oversized-images'.Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'publickey-credentials'.Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'speaker-selection'.Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'unoptimized-images'.Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Unrecognized feature: 'unsized-media'.Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Allow attribute will take precedence over 'allowfullscreen'.Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:32 Allow attribute will take precedence over 'allowpaymentrequest'.Understand this warning
+The FetchEvent for "https://df19cfd3-1b6d-45f4-b56c-d2d1174a7445-00-c1x0oe1i97q3.pike.replit.dev/" resulted in a network error response: a redirected response was used for a request whose redirect mode is not "follow".Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:70 Failed to execute 'postMessage' on 'DOMWindow': The target origin provided ('https://df19cfd3-1b6d-45f4-b56c-d2d1174a7445-00-c1x0oe1i97q3.pike.replit.dev') does not match the recipient window's origin ('null').
+(anonymous) @ workspace_iframe.html?initialPath=%2F&id=default-start-application:70Understand this warning
+workspace_iframe.html?initialPath=%2F&id=default-start-application:70 Failed to execute 'postMessage' on 'DOMWindow': The target origin provided ('https://df19cfd3-1b6d-45f4-b56c-d2d1174a7445-00-c1x0oe1i97q3.pike.replit.dev') does not match the recipient window's origin ('null').
+(anonymous) @ workspace_iframe.html?initialPath=%2F&id=default-start-application:70Understand this warning
+(index):1 Unsafe attempt to load URL https://df19cfd3-1b6d-45f4-b56c-d2d1174a7445-00-c1x0oe1i97q3.pike.replit.dev/ from frame with URL chrome-error://chromewebdata/. Domains, protocols and ports must match.

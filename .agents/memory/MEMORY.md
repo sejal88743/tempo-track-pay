@@ -1,0 +1,3 @@
+- [Replit IPv6 fix](replit-vite-port.md) — @lovable.dev/vite-tanstack-config forces host "::" (IPv6) which EAFNOSUPPORT on Replit; must use custom vite.config with host:"0.0.0.0" port:5000
+- [SSR localStorage guard](ssr-localstorage.md) — All localStorage/sessionStorage calls need `typeof window !== "undefined"` guard or SSR throws "not defined"
+- [localStorage-only architecture](localstorage-arch.md) — No Supabase; all data in localStorage; admin session in sessionStorage; biometric credential IDs stored per employee

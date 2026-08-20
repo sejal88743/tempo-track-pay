@@ -1,0 +1,50 @@
+workspace_iframe.html?initialPath=%2Fworker&id=default-start-application:32 Error while parsing the 'sandbox' attribute: 'allow-downloads-without-user-activation' is an invalid sandbox flag.
+injected.js:37 A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+https://react.dev/link/hydration-mismatch
+
+  ...
+    <Await promise={Promise}>
+      <AwaitInner promise={Promise}>
+        <RouterProvider router={{...}}>
+          <RouterContextProvider router={{...}}>
+            <Matches>
+              <SafeFragment fallback={null}>
+                <Transitioner>
+                <MatchesInner>
+                  <CatchBoundary getResetKey={function getResetKey} errorComponent={function ErrorComponent} ...>
+                    <CatchBoundaryImpl getResetKey={function getResetKey} onCatch={function}>
+                      <MatchImpl matchId="__root__/">
+                        <MatchView router={{...}} matchId="__root__/" resetKey={0} matchState={{routeId:"_...", ...}}>
+                          <RootShell>
+                            <html lang="en" data-tsd-source="/src/route...">
+                              <head
++                               data-tsd-source="/src/routes/__root.tsx:57:7"
+-                               data-tsd-source={null}
+                              >
+                              ...
+
+(anonymous) @ injected.js:37
+injected.js:37 ReferenceError: locBlocked is not defined
+    at WorkerPage (worker.tsx:325:1)
+    at Object.react_stack_bottom_frame (react-dom_client.js?v=db87ca3c:18509:20)
+    at renderWithHooks (react-dom_client.js?v=db87ca3c:5654:24)
+    at updateFunctionComponent (react-dom_client.js?v=db87ca3c:7475:21)
+    at beginWork (react-dom_client.js?v=db87ca3c:8525:20)
+    at runWithFiberInDEV (react-dom_client.js?v=db87ca3c:997:72)
+    at performUnitOfWork (react-dom_client.js?v=db87ca3c:12561:98)
+    at workLoopSync (react-dom_client.js?v=db87ca3c:12424:43)
+    at renderRootSync (react-dom_client.js?v=db87ca3c:12408:13)
+    at performWorkOnRoot (react-dom_client.js?v=db87ca3c:11827:37)
+
+The above error occurred in the <WorkerPage> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, CatchBoundaryImpl

@@ -1,0 +1,153 @@
+0e~imozein5eb.js:21  POST https://logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Afetch%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3Aeeb7664b&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=57f4e271-00bb-40b0-b048-a995240fee69 408 (Request Timeout)
+(anonymous) @ 0e~imozein5eb.js:21
+s @ 0n486ozibobmi.js:14
+ty @ 0n486ozibobmi.js:14
+tm @ 0n486ozibobmi.js:14
+send @ 0n486ozibobmi.js:14
+e.flush @ 0n486ozibobmi.js:14
+(anonymous) @ 0n486ozibobmi.js:14
+(anonymous) @ 0n486ozibobmi.js:14
+e.notify @ 0n486ozibobmi.js:14
+l @ 0n486ozibobmi.js:14
+notifyBeforeAddMessage @ 0n486ozibobmi.js:14
+e.push @ 0n486ozibobmi.js:14
+e.addOrUpdate @ 0n486ozibobmi.js:14
+e.add @ 0n486ozibobmi.js:14
+add @ 0n486ozibobmi.js:14
+(anonymous) @ 0n486ozibobmi.js:14
+(anonymous) @ 0n486ozibobmi.js:14
+e.notify @ 0n486ozibobmi.js:14
+(anonymous) @ 0n486ozibobmi.js:14
+(anonymous) @ 0n486ozibobmi.js:14
+e.notify @ 0n486ozibobmi.js:14
+handleLog @ 0n486ozibobmi.js:14
+(anonymous) @ 0n486ozibobmi.js:14
+e.log @ 0n486ozibobmi.js:14
+I @ 0n486ozibobmi.js:14
+(anonymous) @ 0n486ozibobmi.js:14
+T.n.value @ 0n486ozibobmi.js:14
+e.info @ 0n486ozibobmi.js:14
+info @ 0n486ozibobmi.js:14
+logger @ 0_aorm6zvr1lg.js:2
+y @ 01cjsiigjhxjr.js:2
+dispatchEvent @ 0_aorm6zvr1lg.js:2
+updateSession @ 0_aorm6zvr1lg.js:2
+onConnClosed @ 0_aorm6zvr1lg.js:2
+onConnClosed @ 0_aorm6zvr1lg.js:2
+onConnectionClosed @ 0_aorm6zvr1lg.js:2
+V.ws.onclose @ 0_aorm6zvr1lg.js:2
+05pgi4~mczz_5.js:13 WebSocket connection to 'wss://production-taskman.replit.com/api/river' failed: Connection closed before receiving a handshake response
+(anonymous) @ 05pgi4~mczz_5.js:13
+05pgi4~mczz_5.js:2 WebSocket connection to 'wss://eval.pike.platform.replit.com/wsv2/v2.public.Q2dZSS8vNlYwUVlTQmdpZW01YlJCaUlFY0dsclpUQUFPdlVCQ2lRMU5USXpNemN6WVMxa1lqazFMVFJsWVdFdFltWTJaUzFoWWpRMVpqVXpaRGcwTW1VU0EyNXBlQm9XY21Wd2JHbDBMWEpsY0d3dFptbHNaWE10Y0dsclpTSVBkR1Z0Y0c4dGRISmhZMnN0Y0dGNUtnOW5iM1pwYm1SaGEzVnRZWEpoTlRSQ1Rnb1hjbVZ3YkdsMExYSmxjR3d0WW14dlkydHpMWEJwYTJVU0ZYSmxjR3hwZEMxeVpYQnNMVzFsZEdFdGNHbHJaUm9jY21Wd2JHbDBMVzFoY21kaGNtbHVaUzFpYkc5amEzTXRjR2xyWlVvSENPamI3eHdRQVZBQWVBQ0NBUlZqYjI1dVpXTjBiM0p6TG5KbGNHeHBkQzVqYjIyS0FSZ0tFRVJQWDFORlExVlNTVlJaWDFORFFVNFNCSFJ5ZFdWU0pRZ0JFSUNBZ0lBZ0dRQUFBQUFBQUJCQUlRQUFBQUFBQUJCQUtJQ0FnSURJQVRBQ09BQmdBMm9XQ09qYjd4d1NEMmR2ZG1sdVpHRnJkVzFoY21FMU5JSUJBaklBbWdFS0NnZ3dMakF1TmpBek9hQUJBTW9CQm0xbFpHbDFiUT09sJVbOH4GZJcuoH8wArApMUjfU3sLUG7EfChUn9TPX9_9UXV8ESrl9u6S_HH_y9GLWXX0kjlAXSyyGVsvukcnBQ.Q2dad2NtOWtPak1pQ25KbGNHeHBkQzVqYjIwPQ' failed: Connection closed before receiving a handshake response
+getWs @ 05pgi4~mczz_5.js:2
+05pgi4~mczz_5.js:13 WebSocket connection to 'wss://production-taskman.replit.com/api/river' failed: Connection closed before receiving a handshake response
+(anonymous) @ 05pgi4~mczz_5.js:13
+0e~imozein5eb.js:23  POST https://o1151714.ingest.sentry.io/api/6318792/envelope/?sentry_key=8aa91189a4274b5a8c9b7b01d46ea360&sentry_version=7&sentry_client=sentry.javascript.browser%2F7.120.4 net::ERR_CONNECTION_CLOSED
+(anonymous) @ 0e~imozein5eb.js:23
+(anonymous) @ 0e~imozein5eb.js:21
+add @ 0e~imozein5eb.js:21
+a @ 0e~imozein5eb.js:21
+_sendEnvelope @ 0e~imozein5eb.js:21
+sendSession @ 0e~imozein5eb.js:19
+captureSession @ 0e~imozein5eb.js:19
+_updateSessionFromEvent @ 0e~imozein5eb.js:20
+(anonymous) @ 0e~imozein5eb.js:20
+(anonymous) @ 0w6eu5-feuxz3.js:2
+(anonymous) @ 0w6eu5-feuxz3.js:2
+_executeHandlers @ 0w6eu5-feuxz3.js:2
+(anonymous) @ 0w6eu5-feuxz3.js:2
+J @ 0w6eu5-feuxz3.js:2
+then @ 0w6eu5-feuxz3.js:2
+_processEvent @ 0e~imozein5eb.js:20
+_captureEvent @ 0e~imozein5eb.js:20
+(anonymous) @ 0e~imozein5eb.js:19
+(anonymous) @ 0w6eu5-feuxz3.js:2
+(anonymous) @ 0w6eu5-feuxz3.js:2
+_executeHandlers @ 0w6eu5-feuxz3.js:2
+(anonymous) @ 0w6eu5-feuxz3.js:2
+J @ 0w6eu5-feuxz3.js:2
+then @ 0w6eu5-feuxz3.js:2
+captureException @ 0e~imozein5eb.js:19
+captureException @ 0w6eu5-feuxz3.js:2
+captureException @ 0w6eu5-feuxz3.js:2
+t$ @ 0w6eu5-feuxz3.js:5
+(anonymous) @ 0zuh~3lv6z73y.js:917
+withScope @ 0w6eu5-feuxz3.js:2
+tY @ 0w6eu5-feuxz3.js:5
+(anonymous) @ 0zuh~3lv6z73y.js:917
+0e~imozein5eb.js:23  POST https://o1151714.ingest.sentry.io/api/6318792/envelope/?sentry_key=8aa91189a4274b5a8c9b7b01d46ea360&sentry_version=7&sentry_client=sentry.javascript.browser%2F7.120.4 net::ERR_CONNECTION_CLOSED
+(anonymous) @ 0e~imozein5eb.js:23
+(anonymous) @ 0e~imozein5eb.js:21
+add @ 0e~imozein5eb.js:21
+a @ 0e~imozein5eb.js:21
+_sendEnvelope @ 0e~imozein5eb.js:21
+_flushOutcomes @ 0e~imozein5eb.js:21
+(anonymous) @ 0e~imozein5eb.js:21
+05pgi4~mczz_5.js:2 WebSocket connection to 'wss://eval.pike.platform.replit.com/wsv2/v2.public.Q2dZSStmNlYwUVlTQmdpWW01YlJCaUlFY0dsclpUQUFPdlVCQ2lRMU5USXpNemN6WVMxa1lqazFMVFJsWVdFdFltWTJaUzFoWWpRMVpqVXpaRGcwTW1VU0EyNXBlQm9XY21Wd2JHbDBMWEpsY0d3dFptbHNaWE10Y0dsclpTSVBkR1Z0Y0c4dGRISmhZMnN0Y0dGNUtnOW5iM1pwYm1SaGEzVnRZWEpoTlRSQ1Rnb1hjbVZ3YkdsMExYSmxjR3d0WW14dlkydHpMWEJwYTJVU0ZYSmxjR3hwZEMxeVpYQnNMVzFsZEdFdGNHbHJaUm9jY21Wd2JHbDBMVzFoY21kaGNtbHVaUzFpYkc5amEzTXRjR2xyWlVvSENPamI3eHdRQVZBQWVBQ0NBUlZqYjI1dVpXTjBiM0p6TG5KbGNHeHBkQzVqYjIyS0FSZ0tFRVJQWDFORlExVlNTVlJaWDFORFFVNFNCSFJ5ZFdWU0pRZ0JFSUNBZ0lBZ0dRQUFBQUFBQUJCQUlRQUFBQUFBQUJCQUtJQ0FnSURJQVRBQ09BQmdBMm9XQ09qYjd4d1NEMmR2ZG1sdVpHRnJkVzFoY21FMU5JSUJBaklBbWdFS0NnZ3dMakF1TmpBek9hQUJBTW9CQm0xbFpHbDFiUT09B7Z9uQCSbi2LBYayHVGPChCeqC-Vi2N6VKfihePgFi95-uMcfTzkA3_MFca7r9-Ww6zYZnrz6rd9AAoXbQ_IAQ.Q2dad2NtOWtPak1pQ25KbGNHeHBkQzVqYjIwPQ' failed: Error in connection establishment: net::ERR_CONNECTION_CLOSED
+getWs @ 05pgi4~mczz_5.js:2
+0.1.v15nju8sc.js:2 WebSocket connection to 'wss://eval.pike.platform.replit.com/wsv2/v2.public.Q2dZSXF2K1YwUVlTQmdqSm01YlJCaUlFY0dsclpUQUFPdlVCQ2lRMU5USXpNemN6WVMxa1lqazFMVFJsWVdFdFltWTJaUzFoWWpRMVpqVXpaRGcwTW1VU0EyNXBlQm9XY21Wd2JHbDBMWEpsY0d3dFptbHNaWE10Y0dsclpTSVBkR1Z0Y0c4dGRISmhZMnN0Y0dGNUtnOW5iM1pwYm1SaGEzVnRZWEpoTlRSQ1Rnb1hjbVZ3YkdsMExYSmxjR3d0WW14dlkydHpMWEJwYTJVU0ZYSmxjR3hwZEMxeVpYQnNMVzFsZEdFdGNHbHJaUm9jY21Wd2JHbDBMVzFoY21kaGNtbHVaUzFpYkc5amEzTXRjR2xyWlVvSENPamI3eHdRQVZBQWVBQ0NBUlZqYjI1dVpXTjBiM0p6TG5KbGNHeHBkQzVqYjIyS0FSZ0tFRVJQWDFORlExVlNTVlJaWDFORFFVNFNCSFJ5ZFdWU0pRZ0JFSUNBZ0lBZ0dRQUFBQUFBQUJCQUlRQUFBQUFBQUJCQUtJQ0FnSURJQVRBQ09BQmdBR29XQ09qYjd4d1NEMmR2ZG1sdVpHRnJkVzFoY21FMU5JSUJBaklBbWdFS0NnZ3dMakF1TmpBek9hQUJBTW9CQm0xbFpHbDFiUT09XYWhE-eUEZ-gqxHJJg4VOQg9AMn51o46gUKsL-YFcY_71CZtIWGvyXZkf4i1TWTNytRsAvtthJ2tGcopz-PfCQ.Q2dad2NtOWtPak1pQ25KbGNHeHBkQzVqYjIwPQ' failed: WebSocket is closed before the connection is established.
+cleanupSocket @ 0.1.v15nju8sc.js:2
+y @ 0.1.v15nju8sc.js:2
+(anonymous) @ 0.1.v15nju8sc.js:2
+setTimeout
+m @ 0.1.v15nju8sc.js:2
+connect @ 0.1.v15nju8sc.js:2
+await in connect
+open @ 0.1.v15nju8sc.js:2
+connect @ 0.1.v15nju8sc.js:2
+(anonymous) @ 0.1.v15nju8sc.js:2
+setTimeout
+f @ 0.1.v15nju8sc.js:2
+(anonymous) @ 0.1.v15nju8sc.js:2
+setTimeout
+f @ 0.1.v15nju8sc.js:2
+0x-2-9p3u~k8h.js:2 WebSocket connection to 'wss://replit.com/graphql_subscriptions' failed: Connection closed before receiving a handshake response
+(anonymous) @ 0x-2-9p3u~k8h.js:2
+05pgi4~mczz_5.js:2 WebSocket connection to 'wss://eval.pike.platform.replit.com/wsv2/v2.public.Q2dZSXF2K1YwUVlTQmdqSm01YlJCaUlFY0dsclpUQUFPdlVCQ2lRMU5USXpNemN6WVMxa1lqazFMVFJsWVdFdFltWTJaUzFoWWpRMVpqVXpaRGcwTW1VU0EyNXBlQm9XY21Wd2JHbDBMWEpsY0d3dFptbHNaWE10Y0dsclpTSVBkR1Z0Y0c4dGRISmhZMnN0Y0dGNUtnOW5iM1pwYm1SaGEzVnRZWEpoTlRSQ1Rnb1hjbVZ3YkdsMExYSmxjR3d0WW14dlkydHpMWEJwYTJVU0ZYSmxjR3hwZEMxeVpYQnNMVzFsZEdFdGNHbHJaUm9jY21Wd2JHbDBMVzFoY21kaGNtbHVaUzFpYkc5amEzTXRjR2xyWlVvSENPamI3eHdRQVZBQWVBQ0NBUlZqYjI1dVpXTjBiM0p6TG5KbGNHeHBkQzVqYjIyS0FSZ0tFRVJQWDFORlExVlNTVlJaWDFORFFVNFNCSFJ5ZFdWU0pRZ0JFSUNBZ0lBZ0dRQUFBQUFBQUJCQUlRQUFBQUFBQUJCQUtJQ0FnSURJQVRBQ09BQmdBMm9XQ09qYjd4d1NEMmR2ZG1sdVpHRnJkVzFoY21FMU5JSUJBaklBbWdFS0NnZ3dMakF1TmpBek9hQUJBTW9CQm0xbFpHbDFiUT09d89A767UYHdE5h8CdCKfuNaOZXa_2zHsZYHe18L4F0KikMR8vl4FuUBFrquHtq3NUKUhLOvC5-EsBvPZm6JlBg.Q2dad2NtOWtPak1pQ25KbGNHeHBkQzVqYjIwPQ' failed: Connection closed before receiving a handshake response
+getWs @ 05pgi4~mczz_5.js:2
+05pgi4~mczz_5.js:13 WebSocket connection to 'wss://production-taskman.replit.com/api/river' failed: Connection closed before receiving a handshake response
+(anonymous) @ 05pgi4~mczz_5.js:13
+0_aorm6zvr1lg.js:2 WebSocket connection to 'wss://production-chort.replit.com/api/river-chat' failed: Connection closed before receiving a handshake response
+(anonymous) @ 0_aorm6zvr1lg.js:2
+0_aorm6zvr1lg.js:2 WebSocket connection to 'wss://production-chort.replit.com/api/river-chat' failed: Connection closed before receiving a handshake response
+(anonymous) @ 0_aorm6zvr1lg.js:2
+share-modal.js:1 Uncaught TypeError: Cannot read properties of null (reading 'addEventListener')
+    at share-modal.js:1:135
+(anonymous) @ share-modal.js:1
+setTimeout
+(anonymous) @ share-modal.js:1
+share-modal.js:1 Uncaught TypeError: Cannot read properties of null (reading 'addEventListener')
+    at share-modal.js:1:135
+(anonymous) @ share-modal.js:1
+setTimeout
+(anonymous) @ share-modal.js:1
+0n486ozibobmi.js:14  POST https://logs.browser-intake-us5-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A4.46.0%2Capi%3Abeacon%2Cenv%3Aproduction%2Cservice%3Awebsite%2Cversion%3Aeeb7664b&dd-api-key=pub31a5047a3a4692afb84a423db984dc57&dd-evp-origin-version=4.46.0&dd-evp-origin=browser&dd-request-id=afd3c066-ee23-415f-bb30-4775dbc9c9c1 408 (Request Timeout)
+(anonymous) @ 0n486ozibobmi.js:14
+sendOnExit @ 0n486ozibobmi.js:14
+e.flush @ 0n486ozibobmi.js:14
+(anonymous) @ 0n486ozibobmi.js:14
+(anonymous) @ 0n486ozibobmi.js:14
+e.notify @ 0n486ozibobmi.js:14
+l @ 0n486ozibobmi.js:14
+(anonymous) @ 0n486ozibobmi.js:14
+(anonymous) @ 0n486ozibobmi.js:14
+e.notify @ 0n486ozibobmi.js:14
+e2.capture @ 0n486ozibobmi.js:14
+I @ 0n486ozibobmi.js:14
+(anonymous) @ 0n486ozibobmi.js:14
+share-modal.js:1 Uncaught TypeError: Cannot read properties of null (reading 'addEventListener')
+    at share-modal.js:1:135
+(anonymous) @ share-modal.js:1
+setTimeout
+(anonymous) @ share-modal.js:1
+share-modal.js:1 Uncaught TypeError: Cannot read properties of null (reading 'addEventListener')
+    at share-modal.js:1:135
+(anonymous) @ share-modal.js:1
+setTimeout
+(anonymous) @ share-modal.js:1
+0e~imozein5eb.js:21 Haven't heard from the server in a while, resetting connection...
+(anonymous) @ 0e~imozein5eb.js:21
+(anonymous) @ 07e3-f64zryhb.js:54
+7391980a62497e22001f1a007f4e3ab5a16025937eb7884107292d25e429f624:1  GET https://gravatar.com/avatar/7391980a62497e22001f1a007f4e3ab5a16025937eb7884107292d25e429f624?d=404 404 (Not Found)
+7391980a62497e22001f1a007f4e3ab5a16025937eb7884107292d25e429f624:1  GET https://gravatar.com/avatar/7391980a62497e22001f1a007f4e3ab5a16025937eb7884107292d25e429f624?d=404 404 (Not Found)
+7391980a62497e22001f1a007f4e3ab5a16025937eb7884107292d25e429f624:1  GET https://gravatar.com/avatar/7391980a62497e22001f1a007f4e3ab5a16025937eb7884107292d25e429f624?d=404 404 (Not Found)

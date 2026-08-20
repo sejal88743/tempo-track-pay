@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "sdk_version": "0.25.0",
+  "path": "/mcp",
+  "auth": {
+    "type": "none"
+  },
+  "mcp": {
+    "server": {
+      "name": "transport-staff-mcp",
+      "version": "0.1.0",
+      "title": "Transport Staff Attendance MCP"
+    },
+    "tools": [
+      {
+        "name": "app_info",
+        "title": "App info",
+        "description": "Return basic info about this Transport Staff Attendance & Salary app. Data itself lives in each admin's browser (localStorage), so tools here do not read employee, attendance or salary records.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "today_admin_password_hint",
+        "title": "Today's admin password formula",
+        "description": "Explain today's admin password formula (DDMM + secret word) and today's DDMM prefix in IST. Does not reveal the secret word.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}

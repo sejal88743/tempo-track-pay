@@ -1,0 +1,6 @@
+{
+  "name": "Tempo Track Pay",
+  "description": "Employee attendance, salary, advances, leaves, and tempo management system",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
