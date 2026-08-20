@@ -366,6 +366,12 @@ function WorkerPage() {
     const existing = getAttendanceForDate(today).find(
       (r) => r.employee_id === emp.id && r.shift === shift,
     );
+    // Admin ne aaj is worker ko ABSENT mark kiya ho to worker khud attendance nahi laga sakta.
+    if (existing && existing.status === "absent" && existing.marked_by === "admin") {
+      setBlockedEmp(emp);
+      setStep("scan");
+      return;
+    }
     // Capture fresh GPS at mark time
     let lat: number | undefined, lng: number | undefined, acc: number | undefined;
     try {
