@@ -22,12 +22,16 @@ import {
   ChevronRight,
   Search,
   Calendar,
+  CheckSquare,
+  Square,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   getEmployees,
   getAttendanceForDate,
   upsertAttendance,
+  upsertBulkAttendance,
   getAttendance,
   getSettings,
   newId,
@@ -57,6 +61,8 @@ function AttendancePage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [attRecords, setAttRecords] = useState<AttendanceRecord[]>([]);
   const [nameSearch, setNameSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isSaving, setIsSaving] = useState(false);
   const settings = getSettings();
   const eveningEnabled = settings.evening_enabled ?? false;
   const [shift, setShift] = useState<"morning" | "evening">("morning");
@@ -87,7 +93,7 @@ function AttendancePage() {
     return m;
   }, [attRecords, shift]);
 
-  const update = (employee_id: string, patch: Partial<AttendanceRecord>) => {
+  const update = async (employee_id: string, patch: Partial<AttendanceRecord>) => {
     const norm = normalizeDate(date) || todayISO();
     const cur = attMap.get(employee_id) ?? {
       id: newId(),
@@ -103,35 +109,58 @@ function AttendancePage() {
       method: patch.method ?? "manual",
       marked_by: "admin",
     } as AttendanceRecord;
-    upsertAttendance(next);
+    await upsertAttendance(next);
     reload();
   };
 
-  const markAllPresent = () => {
-    const norm = normalizeDate(date) || todayISO();
-    employees.forEach((e) => {
-      if (!attMap.has(e.id)) {
-        upsertAttendance({
-          id: newId(),
-          employee_id: e.id,
-          date: norm,
-          shift,
-          status: "present",
-          method: "manual",
-          marked_by: "admin",
-        });
-      }
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
-    reload();
-    toast.success("Sabhi ko present mark kiya");
   };
 
-  const markAllAbsent = () => {
-    if (!confirm(`Sabhi ko ABSENT mark karein?`)) return;
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredEmployees.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredEmployees.map((e) => e.id)));
+    }
+  };
+
+  const markAllPresent = async () => {
     const norm = normalizeDate(date) || todayISO();
-    employees.forEach((e) => {
+    const records: AttendanceRecord[] = employees.map((e) => {
       const cur = attMap.get(e.id);
-      upsertAttendance({
+      return {
+        id: cur?.id ?? newId(),
+        employee_id: e.id,
+        date: norm,
+        shift,
+        status: "present",
+        in_time: cur?.in_time ?? new Date().toISOString(),
+        method: "manual",
+        marked_by: "admin",
+        daily_salary_override: cur?.daily_salary_override,
+      };
+    });
+    setIsSaving(true);
+    await upsertBulkAttendance(records);
+    setIsSaving(false);
+    reload();
+    toast.success(
+      `⚡ Sabhi ${records.length} workers Present mark ho kar Supabase me save ho gaye!`,
+    );
+  };
+
+  const markAllAbsent = async () => {
+    if (!confirm(`Sabhi ${employees.length} workers ko ABSENT mark karein?`)) return;
+    const norm = normalizeDate(date) || todayISO();
+    const records: AttendanceRecord[] = employees.map((e) => {
+      const cur = attMap.get(e.id);
+      return {
         id: cur?.id ?? newId(),
         employee_id: e.id,
         date: norm,
@@ -140,10 +169,68 @@ function AttendancePage() {
         method: "manual",
         marked_by: "admin",
         daily_salary_override: cur?.daily_salary_override,
-      });
+      };
     });
+    setIsSaving(true);
+    await upsertBulkAttendance(records);
+    setIsSaving(false);
     reload();
-    toast.success("Sabhi absent mark ho gaye");
+    toast.success(
+      `⚡ Sabhi ${records.length} workers Absent mark ho kar Supabase me save ho gaye!`,
+    );
+  };
+
+  const markSelectedPresent = async () => {
+    if (!selectedIds.size) return;
+    const norm = normalizeDate(date) || todayISO();
+    const targets = employees.filter((e) => selectedIds.has(e.id));
+    const records: AttendanceRecord[] = targets.map((e) => {
+      const cur = attMap.get(e.id);
+      return {
+        id: cur?.id ?? newId(),
+        employee_id: e.id,
+        date: norm,
+        shift,
+        status: "present",
+        in_time: cur?.in_time ?? new Date().toISOString(),
+        method: "manual",
+        marked_by: "admin",
+        daily_salary_override: cur?.daily_salary_override,
+      };
+    });
+    setIsSaving(true);
+    await upsertBulkAttendance(records);
+    setIsSaving(false);
+    setSelectedIds(new Set());
+    reload();
+    toast.success(
+      `⚡ Selected ${records.length} workers Present mark ho kar Supabase me save hue!`,
+    );
+  };
+
+  const markSelectedAbsent = async () => {
+    if (!selectedIds.size) return;
+    const norm = normalizeDate(date) || todayISO();
+    const targets = employees.filter((e) => selectedIds.has(e.id));
+    const records: AttendanceRecord[] = targets.map((e) => {
+      const cur = attMap.get(e.id);
+      return {
+        id: cur?.id ?? newId(),
+        employee_id: e.id,
+        date: norm,
+        shift,
+        status: "absent",
+        method: "manual",
+        marked_by: "admin",
+        daily_salary_override: cur?.daily_salary_override,
+      };
+    });
+    setIsSaving(true);
+    await upsertBulkAttendance(records);
+    setIsSaving(false);
+    setSelectedIds(new Set());
+    reload();
+    toast.success(`⚡ Selected ${records.length} workers Absent mark ho kar Supabase me save hue!`);
   };
 
   const runSundayRuleAction = () => {
@@ -188,7 +275,15 @@ function AttendancePage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Attendance</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold">Attendance</h1>
+            <Badge
+              variant="outline"
+              className="bg-emerald-50 text-emerald-700 border-emerald-300 text-xs"
+            >
+              ⚡ Supabase Batch Sync
+            </Badge>
+          </div>
           <div className="flex gap-3 text-sm mt-0.5">
             <span className="text-green-600 font-medium">✅ Present: {presentCount}</span>
             <span className="text-red-500 font-medium">❌ Absent: {absentCount}</span>
@@ -198,11 +293,11 @@ function AttendancePage() {
           </div>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
-          <Button size="sm" variant="outline" onClick={markAllPresent}>
-            <CheckCircle2 className="size-3.5 mr-1 text-green-600" /> Sab Present
+          <Button size="sm" variant="outline" onClick={markAllPresent} disabled={isSaving}>
+            <CheckCircle2 className="size-3.5 mr-1 text-green-600" /> Sab Present (⚡ Batch)
           </Button>
-          <Button size="sm" variant="outline" onClick={markAllAbsent}>
-            <XCircle className="size-3.5 mr-1 text-red-500" /> Sab Absent
+          <Button size="sm" variant="outline" onClick={markAllAbsent} disabled={isSaving}>
+            <XCircle className="size-3.5 mr-1 text-red-500" /> Sab Absent (⚡ Batch)
           </Button>
           <Button
             size="sm"
@@ -214,6 +309,43 @@ function AttendancePage() {
           </Button>
         </div>
       </div>
+
+      {/* Selected Workers Bulk Action Toolbar */}
+      {selectedIds.size > 0 && (
+        <div className="p-2.5 bg-primary/10 border border-primary/30 rounded-lg flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+            <Zap className="size-4 text-primary" />
+            <span>{selectedIds.size} workers selected:</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+              onClick={markSelectedPresent}
+              disabled={isSaving}
+            >
+              <CheckCircle2 className="size-3.5 mr-1" /> Mark Selected Present (⚡)
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-7 text-xs"
+              onClick={markSelectedAbsent}
+              disabled={isSaving}
+            >
+              <XCircle className="size-3.5 mr-1" /> Mark Selected Absent (⚡)
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              onClick={() => setSelectedIds(new Set())}
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Info notice for Sunday / Monday automatic rules */}
       {isSelectedSunday && (
@@ -352,6 +484,20 @@ function AttendancePage() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10 text-center">
+                <button
+                  type="button"
+                  onClick={toggleSelectAll}
+                  className="p-1 hover:text-primary transition-colors cursor-pointer"
+                  title="Select / Unselect All"
+                >
+                  {selectedIds.size > 0 && selectedIds.size === filteredEmployees.length ? (
+                    <CheckSquare className="size-4 text-primary" />
+                  ) : (
+                    <Square className="size-4 text-muted-foreground" />
+                  )}
+                </button>
+              </TableHead>
               <TableHead className="min-w-[140px]">Worker Name</TableHead>
               <TableHead className="min-w-[110px]">Role</TableHead>
               <TableHead className="min-w-[160px]">Attendance</TableHead>
@@ -373,9 +519,28 @@ function AttendancePage() {
               const status = a?.status;
               const isAutoSunday = a?.method === "auto-sunday";
               const isAutoAbsent = a?.method === "auto-absent";
+              const isSelected = selectedIds.has(e.id);
 
               return (
-                <TableRow key={e.id} className={!status ? "bg-muted/20" : ""}>
+                <TableRow
+                  key={e.id}
+                  className={isSelected ? "bg-primary/5" : !status ? "bg-muted/20" : ""}
+                >
+                  {/* Select Checkbox */}
+                  <TableCell className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => toggleSelect(e.id)}
+                      className="p-1 hover:text-primary transition-colors cursor-pointer"
+                    >
+                      {isSelected ? (
+                        <CheckSquare className="size-4 text-primary" />
+                      ) : (
+                        <Square className="size-4 text-muted-foreground" />
+                      )}
+                    </button>
+                  </TableCell>
+
                   {/* Name */}
                   <TableCell className="font-medium text-sm">
                     <div className="flex items-center gap-1.5">

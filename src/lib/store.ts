@@ -381,7 +381,18 @@ async function hydrate() {
       sb.from("settings").select("*").eq("key", "app_settings").maybeSingle(),
     ]);
     if (emp.data) cache.employees = emp.data.map(dbToEmployee);
-    if (att.data) cache.attendance = att.data.map(dbToAttendance);
+    if (att.data) {
+      const cloudList = att.data.map(dbToAttendance);
+      // Create a set of keys from cloud records
+      const cloudKeys = new Set(
+        cloudList.map((c) => `${c.employee_id}_${normalizeDate(c.date)}_${c.shift}`),
+      );
+      // Keep any local records that might not yet be in the cloud (offline/pending sync)
+      const localPreserved = cache.attendance.filter(
+        (l) => !cloudKeys.has(`${l.employee_id}_${normalizeDate(l.date)}_${l.shift}`),
+      );
+      cache.attendance = [...cloudList, ...localPreserved];
+    }
     if (lv.data) cache.leaves = lv.data.map(dbToLeave);
     if (adv.data) cache.advances = adv.data.map(dbToAdvance);
     if (sal.data) cache.salaries = sal.data.map(dbToSalary);
@@ -391,7 +402,6 @@ async function hydrate() {
     bump();
     subscribeRealtime();
     void flushPendingAttendance();
-
   } catch (e) {
     console.error("[cloud-hydrate]", e);
   }
@@ -560,19 +570,69 @@ async function pushAttendanceRow(row: PendingRow): Promise<boolean> {
   return true;
 }
 
+export async function pushAttendanceRowsBatch(
+  rows: PendingRow[],
+): Promise<{ success: boolean; count: number }> {
+  if (!sb || rows.length === 0) return { success: false, count: 0 };
+
+  const payloads = rows.map((r) => {
+    const { id: _id, ...p } = r;
+    return p;
+  });
+
+  let savedCount = 0;
+  const chunkSize = 50;
+  for (let i = 0; i < payloads.length; i += chunkSize) {
+    const chunk = payloads.slice(i, i + chunkSize);
+    const chunkRows = rows.slice(i, i + chunkSize);
+
+    const { data, error } = await sb
+      .from("attendance")
+      .upsert(chunk, { onConflict: "employee_id,attendance_date,shift" })
+      .select();
+
+    if (error) {
+      warn("attendance.batchUpsert", error);
+      chunkRows.forEach(queuePending);
+    } else {
+      chunkRows.forEach(dequeuePending);
+      if (data && Array.isArray(data)) {
+        savedCount += data.length;
+        const savedList = data.map((d) => dbToAttendance(d as Row));
+        const list = [...cache.attendance];
+        for (const saved of savedList) {
+          const idx = list.findIndex(
+            (r) =>
+              r.employee_id === saved.employee_id &&
+              normalizeDate(r.date) === normalizeDate(saved.date) &&
+              r.shift === saved.shift,
+          );
+          if (idx >= 0) list[idx] = saved;
+          else list.unshift(saved);
+        }
+        cache.attendance = list;
+        saveLocal("tsa_attendance", list);
+      }
+    }
+  }
+
+  bump();
+  fire("Attendance");
+  return { success: savedCount > 0 || rows.length === 0, count: savedCount };
+}
+
 export async function flushPendingAttendance(): Promise<number> {
   if (!sb || !isBrowser) return 0;
   const rows = loadPending();
-  let ok = 0;
-  for (const r of rows) if (await pushAttendanceRow(r)) ok++;
-  return ok;
+  if (rows.length === 0) return 0;
+  const res = await pushAttendanceRowsBatch(rows);
+  return res.count;
 }
 
 if (isBrowser) {
   window.addEventListener("online", () => void flushPendingAttendance());
   setInterval(() => void flushPendingAttendance(), 30000);
 }
-
 
 // ---------- employees ----------
 
@@ -667,7 +727,10 @@ export function saveAttendance(list: AttendanceRecord[]) {
 
 let isAutoSundayRunning = false;
 
-export function upsertAttendance(rec: AttendanceRecord, options?: { skipSundayCheck?: boolean }) {
+export function upsertAttendance(
+  rec: AttendanceRecord,
+  options?: { skipSundayCheck?: boolean },
+): Promise<boolean> {
   rec = { ...rec, date: normalizeDate(rec.date) };
   const list = [...cache.attendance];
   const idx = list.findIndex(
@@ -684,8 +747,13 @@ export function upsertAttendance(rec: AttendanceRecord, options?: { skipSundayCh
   saveLocal("tsa_attendance", list);
   bump();
   const row = attendanceToDb(rec);
-  if (sb) void pushAttendanceRow(row);
-  else queuePending(row);
+  let pushPromise: Promise<boolean>;
+  if (sb) {
+    pushPromise = pushAttendanceRow(row);
+  } else {
+    queuePending(row);
+    pushPromise = Promise.resolve(true);
+  }
 
   fire("Attendance");
 
@@ -720,6 +788,77 @@ export function upsertAttendance(rec: AttendanceRecord, options?: { skipSundayCh
       }, 50);
     }
   }
+
+  return pushPromise;
+}
+
+export function upsertBulkAttendance(
+  records: AttendanceRecord[],
+  options?: { skipSundayCheck?: boolean },
+): Promise<{ success: boolean; count: number }> {
+  if (!records.length) return Promise.resolve({ success: true, count: 0 });
+
+  const normalized = records.map((rec) => ({
+    ...rec,
+    date: normalizeDate(rec.date),
+    method: rec.method ?? "manual",
+    marked_by: rec.marked_by ?? "admin",
+  }));
+
+  const list = [...cache.attendance];
+  const dbRows: PendingRow[] = [];
+
+  for (let rec of normalized) {
+    const idx = list.findIndex(
+      (r) =>
+        r.employee_id === rec.employee_id &&
+        normalizeDate(r.date) === rec.date &&
+        r.shift === rec.shift,
+    );
+    if (idx >= 0) {
+      rec = { ...list[idx], ...rec, id: list[idx].id };
+      list[idx] = rec;
+    } else {
+      list.unshift(rec);
+    }
+    dbRows.push(attendanceToDb(rec));
+  }
+
+  cache.attendance = list;
+  saveLocal("tsa_attendance", list);
+  bump();
+  fire("Attendance");
+
+  let pushPromise: Promise<{ success: boolean; count: number }>;
+  if (sb) {
+    pushPromise = pushAttendanceRowsBatch(dbRows);
+  } else {
+    dbRows.forEach(queuePending);
+    pushPromise = Promise.resolve({ success: true, count: records.length });
+  }
+
+  // Automatic Sunday Rule trigger for batch
+  if (!options?.skipSundayCheck && !isAutoSundayRunning && isBrowser) {
+    const hasMonOrSat = normalized.some((r) => {
+      const day = new Date(r.date + "T00:00:00Z").getUTCDay();
+      return (day === 1 || day === 6) && r.shift === "morning";
+    });
+    if (hasMonOrSat) {
+      isAutoSundayRunning = true;
+      setTimeout(async () => {
+        try {
+          const autoAtt = await import("./auto-attendance");
+          autoAtt.applyRecentSundayRules();
+        } catch {
+          /* ignore */
+        } finally {
+          isAutoSundayRunning = false;
+        }
+      }, 100);
+    }
+  }
+
+  return pushPromise;
 }
 export function getAttendanceForDate(date: string): AttendanceRecord[] {
   const norm = normalizeDate(date);

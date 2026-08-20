@@ -14,6 +14,19 @@ export default defineConfig({
       }),
       mcpPlugin(),
     ],
+    build: {
+      rollupOptions: {
+        onwarn(warning, defaultHandler) {
+          if (
+            warning.code === "MODULE_LEVEL_DIRECTIVE" ||
+            warning.message?.includes('"use client"')
+          ) {
+            return;
+          }
+          defaultHandler(warning);
+        },
+      },
+    },
     server: {
       port: 3000,
       host: "0.0.0.0",

@@ -3,15 +3,23 @@ import { z } from "zod";
 
 const TABS = ["Employees", "Attendance", "Salary", "Leaves", "Advances", "Tempos"] as const;
 
-function getApiKeys() {
+function getApiKeysOptional() {
   const lovable = process.env.LOVABLE_API_KEY;
   const key = process.env.GOOGLE_SHEETS_API_KEY;
   if (!lovable || !key) {
+    return null;
+  }
+  return { lovable, key };
+}
+
+function getApiKeys() {
+  const keys = getApiKeysOptional();
+  if (!keys) {
     throw new Error(
       "Google Sheets integration is not configured. LOVABLE_API_KEY and GOOGLE_SHEETS_API_KEY are required.",
     );
   }
-  return { lovable, key };
+  return keys;
 }
 
 const GATEWAY = "https://connector-gateway.lovable.dev/google_sheets/v4";
@@ -130,6 +138,10 @@ const syncSchema = z.object({
 export const syncTabToSheet = createServerFn({ method: "POST" })
   .inputValidator((d) => syncSchema.parse(d))
   .handler(async ({ data }) => {
+    const keys = getApiKeysOptional();
+    if (!keys) {
+      return { ok: false, count: 0, skipped: true, reason: "Sheets API not configured" };
+    }
     await gw(`/spreadsheets/${data.spreadsheetId}/values/${data.tab}!A2:Z:clear`, {
       method: "POST",
       body: {},

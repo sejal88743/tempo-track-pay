@@ -122,9 +122,13 @@ async function flush() {
   timer = null;
   for (const tab of tabs) {
     try {
-      await syncTabToSheet({ data: { spreadsheetId: sid, tab, rows: rowsFor(tab) } });
+      const res = await syncTabToSheet({ data: { spreadsheetId: sid, tab, rows: rowsFor(tab) } });
+      if (res && "skipped" in res && res.skipped) {
+        // Sheets API not configured on backend, stop further attempts in this batch
+        break;
+      }
     } catch (e) {
-      console.error("[sheets-sync]", tab, e);
+      console.warn("[sheets-sync]", tab, e);
     }
   }
   // update last_synced

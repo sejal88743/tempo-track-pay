@@ -57,12 +57,18 @@ export function SortHeader({
       <button
         type="button"
         onClick={() => toggle(sortKey)}
-        className={`inline-flex items-center gap-1 select-none hover:text-foreground transition-colors ${
-          active ? "text-foreground font-semibold" : ""
+        className={`inline-flex items-center gap-1.5 select-none hover:text-foreground transition-colors cursor-pointer ${
+          active ? "text-primary font-bold" : "text-muted-foreground"
         } ${align === "right" ? "flex-row-reverse w-full justify-start" : ""}`}
+        title={`Sort by ${label} (${active ? (sort!.dir === "asc" ? "Ascending -> Descending" : "Descending -> Default") : "Click to sort"})`}
       >
-        {label}
-        <Icon className={`size-3.5 ${active ? "opacity-100" : "opacity-40"}`} />
+        <span>{label}</span>
+        <Icon className={`size-3.5 ${active ? "opacity-100 text-primary" : "opacity-40"}`} />
+        {active && (
+          <span className="text-[10px] font-bold px-1 py-0.5 rounded bg-primary/10 text-primary uppercase leading-none">
+            {sort!.dir === "asc" ? "Asc" : "Desc"}
+          </span>
+        )}
       </button>
     </TableHead>
   );
