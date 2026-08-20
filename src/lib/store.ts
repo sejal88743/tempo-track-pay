@@ -54,6 +54,8 @@ export type AttendanceRecord = {
   out_time?: string;
   location_ok?: boolean;
   method?: "manual" | "fingerprint" | "face" | "auto-sunday" | "auto-absent";
+  /** Kisne mark kiya: admin panel se, worker ne khud scan karke, ya auto rule ne */
+  marked_by?: "admin" | "worker" | "auto";
   device_id?: string;
   latitude?: number;
   longitude?: number;
