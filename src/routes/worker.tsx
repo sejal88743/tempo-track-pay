@@ -933,6 +933,25 @@ function WorkerPage() {
           );
         })()}
 
+      {/* ── ADMIN-ABSENT BLOCK POPUP ───────────────────────────────────────── */}
+      {blockedEmp && (
+        <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-800 rounded-2xl w-full max-w-sm p-6 space-y-4 text-center border border-red-500/30 shadow-2xl">
+            <div className="size-14 rounded-full bg-red-500/20 flex items-center justify-center mx-auto">
+              <ScanFace className="size-7 text-red-400" />
+            </div>
+            <h3 className="text-3xl font-extrabold text-red-400">CONTACT TO BOSS</h3>
+            <p className="text-white/70 text-sm">
+              {blockedEmp.full_name} ki aaj ki chutti admin ne mark ki hai. Attendance ab sirf admin
+              hi badal sakta hai.
+            </p>
+            <Button className="w-full" variant="secondary" onClick={() => setBlockedEmp(null)}>
+              Theek Hai
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* ── NO-MATCH POPUP ─────────────────────────────────────────────────── */}
       {showNoMatchPopup && (
         <div className="fixed inset-0 bg-black/80 flex items-end sm:items-center justify-center p-4 z-50">
