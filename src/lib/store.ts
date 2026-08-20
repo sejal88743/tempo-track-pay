@@ -380,6 +380,8 @@ async function hydrate() {
     persistLocal();
     bump();
     subscribeRealtime();
+    void flushPendingAttendance();
+
   } catch (e) {
     console.error("[cloud-hydrate]", e);
   }
