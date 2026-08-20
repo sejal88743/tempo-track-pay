@@ -251,6 +251,7 @@ function dbToAttendance(r: Row): AttendanceRecord {
     out_time: r.out_time ?? undefined,
     location_ok: r.location_ok ?? undefined,
     method: (r.method as AttendanceRecord["method"]) ?? undefined,
+    marked_by: (r.marked_by as AttendanceRecord["marked_by"]) ?? undefined,
     device_id: r.device_id ?? undefined,
     latitude: r.latitude ?? undefined,
     longitude: r.longitude ?? undefined,
