@@ -30,13 +30,21 @@ import {
 import { Plus, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { useSortable, SortHeader } from "@/lib/use-sort";
-import { getAdvances, upsertAdvance, getEmployees, newId, type Advance } from "@/lib/store";
+import {
+  getAdvances,
+  upsertAdvance,
+  getEmployees,
+  newId,
+  useCloudSync,
+  type Advance,
+} from "@/lib/store";
 
 export const Route = createFileRoute("/_admin/advances")({ component: AdvancesPage });
 
 type AdvWithName = Advance & { emp_name: string };
 
 function AdvancesPage() {
+  const syncVersion = useCloudSync();
   const [advances, setAdvances] = useState<AdvWithName[]>([]);
   const [editing, setEditing] = useState<Partial<Advance> | null>(null);
   const [employees, setEmployees] = useState<{ id: string; full_name: string }[]>([]);
@@ -54,7 +62,7 @@ function AdvancesPage() {
 
   useEffect(() => {
     reload();
-  }, []);
+  }, [syncVersion]);
 
   const approve = (a: Advance) => {
     upsertAdvance({ ...a, status: "approved" });

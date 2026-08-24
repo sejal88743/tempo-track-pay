@@ -107,6 +107,7 @@ function formatDayTitle(dateStr: string): string {
 
 // ── Monthly Attendance Matrix ──────────────────────────────────────────────
 function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }) {
+  const syncVersion = useCloudSync();
   const tableRef = useRef<HTMLDivElement>(null);
   // Incremented on every cell edit so useMemo re-runs and the table refreshes
   const [revision, setRevision] = useState(0);
@@ -123,7 +124,7 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
 
   // month is intentionally in deps to refresh employee list on month change
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const emps = useMemo(() => getEmployees().filter((e) => e.active), [month]);
+  const emps = useMemo(() => getEmployees().filter((e) => e.active), [month, syncVersion]);
   const totalDays = useMemo(() => daysInMonthCount(month), [month]);
   const dates = useMemo(
     () => Array.from({ length: totalDays }, (_, i) => pad2(i + 1)),
@@ -145,7 +146,7 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
     return m;
     // revision is intentionally in deps to force re-read on edits
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month, revision]);
+  }, [month, revision, syncVersion]);
 
   // Build leave lookup: empId -> Set of date strings (dd) in this month
   const leaveMap = useMemo(() => {
@@ -860,6 +861,7 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
 
 // ── Daily Attendance Report ────────────────────────────────────────────────
 function DailyReport({ date }: { date: string }) {
+  const syncVersion = useCloudSync();
   const [revision, setRevision] = useState(0);
   const [selectedDailyIds, setSelectedDailyIds] = useState<Set<string>>(new Set());
   const [isDailySaving, setIsDailySaving] = useState(false);
@@ -867,12 +869,12 @@ function DailyReport({ date }: { date: string }) {
   const emps = useMemo(
     () => getEmployees().filter((e) => e.active),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [date, revision],
+    [date, revision, syncVersion],
   );
   const att = useMemo(
     () => getAttendanceForDate(date),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [date, revision],
+    [date, revision, syncVersion],
   );
 
   const summary = useMemo(() => {

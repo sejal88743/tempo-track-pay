@@ -28,7 +28,7 @@ export const Route = createFileRoute("/_admin/salary")({ component: SalaryPage }
 type RowWithName = SalaryRecord & { emp_name: string };
 
 function SalaryPage() {
-  useCloudSync();
+  const syncVersion = useCloudSync();
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
   const [rows, setRows] = useState<RowWithName[]>([]);
 
@@ -41,7 +41,7 @@ function SalaryPage() {
 
   useEffect(() => {
     reload();
-  }, [month]);
+  }, [month, syncVersion]);
 
   const generate = () => {
     const r = generateSalaries(month);

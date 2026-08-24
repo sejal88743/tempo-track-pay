@@ -29,13 +29,14 @@ import {
 } from "@/components/ui/select";
 import { Plus, Check, X } from "lucide-react";
 import { toast } from "sonner";
-import { getLeaves, upsertLeave, getEmployees, newId, type Leave } from "@/lib/store";
+import { getLeaves, upsertLeave, getEmployees, newId, useCloudSync, type Leave } from "@/lib/store";
 
 export const Route = createFileRoute("/_admin/leaves")({ component: LeavesPage });
 
 type LeaveWithName = Leave & { emp_name: string };
 
 function LeavesPage() {
+  const syncVersion = useCloudSync();
   const [leaves, setLeaves] = useState<LeaveWithName[]>([]);
   const [editing, setEditing] = useState<Partial<Leave> | null>(null);
   const [employees, setEmployees] = useState<{ id: string; full_name: string }[]>([]);
@@ -53,7 +54,7 @@ function LeavesPage() {
 
   useEffect(() => {
     reload();
-  }, []);
+  }, [syncVersion]);
 
   const approve = (l: Leave) => {
     upsertLeave({ ...l, status: "approved" });

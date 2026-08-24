@@ -56,7 +56,7 @@ function stepDate(date: string, days: number) {
 }
 
 function AttendancePage() {
-  useCloudSync();
+  const syncVersion = useCloudSync();
   const [date, setDate] = useState(todayISO());
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [attRecords, setAttRecords] = useState<AttendanceRecord[]>([]);
@@ -85,7 +85,7 @@ function AttendancePage() {
   useEffect(() => {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date]);
+  }, [date, syncVersion]);
 
   const attMap = useMemo(() => {
     const m = new Map<string, AttendanceRecord>();
@@ -699,7 +699,22 @@ function AttendancePage() {
 
                   {/* Location */}
                   <TableCell>
-                    {a?.location_ok === true ? (
+                    {a?.latitude && a?.longitude ? (
+                      <a
+                        href={`https://www.google.com/maps?q=${a.latitude},${a.longitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={`text-xs flex items-center gap-1 hover:underline ${
+                          a.location_ok === false
+                            ? "text-red-500 font-medium"
+                            : "text-emerald-600 font-medium"
+                        }`}
+                        title={`GPS: ${a.latitude.toFixed(5)}, ${a.longitude.toFixed(5)} (±${Math.round(a.accuracy_meters ?? 0)}m)`}
+                      >
+                        <MapPin className="size-3.5 shrink-0" />
+                        <span>{a.location_ok === false ? "Outside" : "Live GPS"}</span>
+                      </a>
+                    ) : a?.location_ok === true ? (
                       <span className="text-green-600 text-xs flex items-center gap-0.5">
                         <MapPin className="size-3" /> OK
                       </span>

@@ -366,10 +366,34 @@ function tempoToDb(t: Tempo): Row {
 
 // ---------- hydration + realtime ----------
 
-let hydrated = false;
-async function hydrate() {
-  if (!isBrowser || hydrated || !sb) return;
-  hydrated = true;
+export type SyncState = {
+  status: "connected" | "syncing" | "offline" | "error";
+  lastSyncedAt: string | null;
+  pendingCount: number;
+  errorMessage?: string;
+};
+
+let syncState: SyncState = {
+  status: "syncing",
+  lastSyncedAt: null,
+  pendingCount: 0,
+};
+
+export function getSyncStatus(): SyncState {
+  return { ...syncState, pendingCount: loadPending().length };
+}
+
+function updateSyncState(patch: Partial<SyncState>) {
+  syncState = { ...syncState, ...patch };
+  bump();
+}
+
+let isHydrating = false;
+async function hydrate(): Promise<boolean> {
+  if (!isBrowser || !sb || isHydrating) return false;
+  isHydrating = true;
+  updateSyncState({ status: "syncing" });
+
   try {
     const [emp, att, lv, adv, sal, tmp, st] = await Promise.all([
       sb.from("employees").select("*").order("created_at", { ascending: false }),
@@ -380,30 +404,71 @@ async function hydrate() {
       sb.from("tempos").select("*").order("created_at", { ascending: false }),
       sb.from("settings").select("*").eq("key", "app_settings").maybeSingle(),
     ]);
+
     if (emp.data) cache.employees = emp.data.map(dbToEmployee);
+
     if (att.data) {
       const cloudList = att.data.map(dbToAttendance);
-      // Create a set of keys from cloud records
-      const cloudKeys = new Set(
-        cloudList.map((c) => `${c.employee_id}_${normalizeDate(c.date)}_${c.shift}`),
-      );
-      // Keep any local records that might not yet be in the cloud (offline/pending sync)
-      const localPreserved = cache.attendance.filter(
-        (l) => !cloudKeys.has(`${l.employee_id}_${normalizeDate(l.date)}_${l.shift}`),
-      );
-      cache.attendance = [...cloudList, ...localPreserved];
+      // Deduplicate cloud list by employee + normalized date + shift
+      const attMap = new Map<string, AttendanceRecord>();
+      for (const c of cloudList) {
+        const normDate = normalizeDate(c.date);
+        const key = `${c.employee_id}_${normDate}_${c.shift}`;
+        const existing = attMap.get(key);
+        if (!existing) {
+          attMap.set(key, { ...c, date: normDate });
+        } else {
+          // If duplicate exists in DB, prioritize one with timestamp or present status
+          if (c.status === "present" || c.in_time) {
+            attMap.set(key, { ...c, date: normDate });
+          }
+        }
+      }
+
+      // Merge only truly pending offline records from the pending queue
+      const pendingRows = loadPending();
+      for (const p of pendingRows) {
+        const normDate = normalizeDate(p.attendance_date);
+        const key = `${p.employee_id}_${normDate}_${p.shift}`;
+        if (!attMap.has(key)) {
+          attMap.set(key, dbToAttendance(p));
+        }
+      }
+
+      cache.attendance = Array.from(attMap.values()).sort((a, b) => a.date.localeCompare(b.date));
     }
+
     if (lv.data) cache.leaves = lv.data.map(dbToLeave);
     if (adv.data) cache.advances = adv.data.map(dbToAdvance);
     if (sal.data) cache.salaries = sal.data.map(dbToSalary);
     if (tmp.data) cache.tempos = tmp.data.map(dbToTempo);
     if (st.data?.value) cache.settings = { ...DEFAULT_SETTINGS, ...(st.data.value as AppSettings) };
+
     persistLocal();
+    updateSyncState({
+      status: "connected",
+      lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
+      pendingCount: loadPending().length,
+      errorMessage: undefined,
+    });
     bump();
-    subscribeRealtime();
+
+    ensureRealtimeSubscription();
     void flushPendingAttendance();
+    return true;
   } catch (e) {
     console.error("[cloud-hydrate]", e);
+    updateSyncState({
+      status: "error",
+      errorMessage: (e as Error).message || "Sync failed",
+    });
+    return false;
+  } finally {
+    isHydrating = false;
   }
 }
 
@@ -417,75 +482,186 @@ function persistLocal() {
   saveLocal("tsa_settings", cache.settings);
 }
 
-function subscribeRealtime() {
-  if (!sb) return;
+let realtimeChannel: ReturnType<typeof sb.channel> | null = null;
+
+function ensureRealtimeSubscription() {
+  if (!sb || realtimeChannel) return;
+
   const applyUpsert = <T extends { id: string }>(arr: T[], next: T) => {
     const i = arr.findIndex((x) => x.id === next.id);
     if (i >= 0) arr[i] = next;
     else arr.unshift(next);
   };
+
   const applyDelete = <T extends { id: string }>(arr: T[], id: string) => {
     const i = arr.findIndex((x) => x.id === id);
     if (i >= 0) arr.splice(i, 1);
   };
 
-  sb.channel("app-realtime")
+  const applyAttendanceUpsert = (arr: AttendanceRecord[], next: AttendanceRecord) => {
+    const normDate = normalizeDate(next.date);
+    const item = { ...next, date: normDate };
+    const i = arr.findIndex(
+      (x) =>
+        x.id === item.id ||
+        (x.employee_id === item.employee_id &&
+          normalizeDate(x.date) === normDate &&
+          x.shift === item.shift),
+    );
+    if (i >= 0) arr[i] = item;
+    else arr.unshift(item);
+  };
+
+  const applyAttendanceDelete = (arr: AttendanceRecord[], id: string) => {
+    const i = arr.findIndex((x) => x.id === id);
+    if (i >= 0) arr.splice(i, 1);
+  };
+
+  realtimeChannel = sb
+    .channel("app-realtime-sync")
     .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, (p) => {
       if (p.eventType === "DELETE" && p.old) applyDelete(cache.employees, (p.old as Row).id);
       else if (p.new) applyUpsert(cache.employees, dbToEmployee(p.new as Row));
       persistLocal();
-      bump();
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+      });
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, (p) => {
       if (p.eventType === "DELETE" && p.old) applyDelete(cache.attendance, (p.old as Row).id);
-      else if (p.new) applyUpsert(cache.attendance, dbToAttendance(p.new as Row));
+      else if (p.new) applyAttendanceUpsert(cache.attendance, dbToAttendance(p.new as Row));
       persistLocal();
-      bump();
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+      });
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "leaves" }, (p) => {
       if (p.eventType === "DELETE" && p.old) applyDelete(cache.leaves, (p.old as Row).id);
       else if (p.new) applyUpsert(cache.leaves, dbToLeave(p.new as Row));
       persistLocal();
-      bump();
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+      });
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "advances" }, (p) => {
       if (p.eventType === "DELETE" && p.old) applyDelete(cache.advances, (p.old as Row).id);
       else if (p.new) applyUpsert(cache.advances, dbToAdvance(p.new as Row));
       persistLocal();
-      bump();
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+      });
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "salaries" }, (p) => {
       if (p.eventType === "DELETE" && p.old) applyDelete(cache.salaries, (p.old as Row).id);
       else if (p.new) applyUpsert(cache.salaries, dbToSalary(p.new as Row));
       persistLocal();
-      bump();
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+      });
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "tempos" }, (p) => {
       if (p.eventType === "DELETE" && p.old) applyDelete(cache.tempos, (p.old as Row).id);
       else if (p.new) applyUpsert(cache.tempos, dbToTempo(p.new as Row));
       persistLocal();
-      bump();
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+      });
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "settings" }, (p) => {
       const row = (p.new ?? p.old) as Row | null;
       if (row && row.key === "app_settings" && p.new) {
         cache.settings = { ...DEFAULT_SETTINGS, ...((p.new as Row).value as AppSettings) };
         persistLocal();
-        bump();
+        updateSyncState({
+          status: "connected",
+          lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+        });
       }
-    })
-    .subscribe();
+    });
+
+  realtimeChannel.subscribe((status) => {
+    if (status === "SUBSCRIBED") {
+      updateSyncState({ status: "connected" });
+    } else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+      updateSyncState({ status: "offline" });
+      realtimeChannel = null;
+      // Try to re-subscribe after delay
+      setTimeout(ensureRealtimeSubscription, 3000);
+    }
+  });
 }
 
 // Kick off on module load (browser only).
 if (isBrowser) {
   void hydrate();
+
+  // Multi-device sync triggers: tab focus, visibility change, online event, and periodic polling
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      void hydrate();
+    }
+  });
+  window.addEventListener("focus", () => {
+    void hydrate();
+  });
+  window.addEventListener("online", () => {
+    updateSyncState({ status: "syncing" });
+    void hydrate();
+  });
+  window.addEventListener("offline", () => {
+    updateSyncState({ status: "offline" });
+  });
+
+  // Background auto-sync every 12 seconds to guarantee live parity across all phones/PCs
+  setInterval(() => {
+    if (document.visibilityState === "visible" && navigator.onLine !== false) {
+      void hydrate();
+    }
+  }, 12000);
 }
 
-// Manual re-hydrate (useful after long offline).
-export async function refreshCloud() {
-  hydrated = false;
-  await hydrate();
+// Manual force sync (available to all components/pages)
+export async function refreshCloud(): Promise<boolean> {
+  return await hydrate();
+}
+
+export async function forceCloudSync(): Promise<{ success: boolean; lastSyncedAt: string | null }> {
+  const ok = await hydrate();
+  return { success: ok, lastSyncedAt: syncState.lastSyncedAt };
 }
 
 // ---------- write helpers (fire-and-forget with local optimistic update) ----------
