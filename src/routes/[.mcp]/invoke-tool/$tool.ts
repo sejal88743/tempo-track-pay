@@ -21,3 +21,4 @@ export const Route = createFileRoute("/.mcp/invoke-tool/$tool")({
     },
   },
 });
+

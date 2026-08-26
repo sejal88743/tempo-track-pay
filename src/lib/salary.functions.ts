@@ -32,8 +32,7 @@ export const generateMonthlySalaries = createServerFn({ method: "POST" })
     const { query, execute } = await import("@/integrations/supabase/client.server");
     const total = daysInMonth(data.month);
     const monthStart = `${data.month}-01`;
-    const [y, m] = data.month.split("-").map(Number);
-    const monthEnd = new Date(y, m, 0).toISOString().slice(0, 10);
+    const monthEnd = `${data.month}-${String(total).padStart(2, "0")}`;
 
     const emps = await query<{ id: string; monthly_salary: string }>(
       `SELECT id, monthly_salary FROM employees WHERE active = true`,

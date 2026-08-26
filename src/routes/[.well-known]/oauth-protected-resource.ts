@@ -20,3 +20,4 @@ export const Route = createFileRoute("/.well-known/oauth-protected-resource")({
     },
   },
 });
+

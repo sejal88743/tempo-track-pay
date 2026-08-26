@@ -397,7 +397,7 @@ async function hydrate(): Promise<boolean> {
   try {
     const [emp, att, lv, adv, sal, tmp, st] = await Promise.all([
       sb.from("employees").select("*").order("created_at", { ascending: false }),
-      sb.from("attendance").select("*").order("attendance_date", { ascending: false }).limit(5000),
+      sb.from("attendance").select("*").order("attendance_date", { ascending: false }).limit(10000),
       sb.from("leaves").select("*").order("created_at", { ascending: false }),
       sb.from("advances").select("*").order("created_at", { ascending: false }),
       sb.from("salaries").select("*").order("generated_at", { ascending: false }),
@@ -407,36 +407,72 @@ async function hydrate(): Promise<boolean> {
 
     if (emp.data) cache.employees = emp.data.map(dbToEmployee);
 
+    // Collect all local records (current cache, local storage, backup storage)
+    const localSources: AttendanceRecord[] = [
+      ...cache.attendance,
+      ...loadLocal<AttendanceRecord[]>("tsa_attendance", []),
+      ...loadLocal<AttendanceRecord[]>("tsa_attendance_backup", []),
+    ];
+
+    const attMap = new Map<string, AttendanceRecord>();
+    const cloudKeys = new Set<string>();
+
     if (att.data) {
       const cloudList = att.data.map(dbToAttendance);
-      // Deduplicate cloud list by employee + normalized date + shift
-      const attMap = new Map<string, AttendanceRecord>();
       for (const c of cloudList) {
         const normDate = normalizeDate(c.date);
-        const key = `${c.employee_id}_${normDate}_${c.shift}`;
+        const key = `${c.employee_id}_${normDate}_${c.shift || "morning"}`;
+        cloudKeys.add(key);
         const existing = attMap.get(key);
         if (!existing) {
           attMap.set(key, { ...c, date: normDate });
         } else {
-          // If duplicate exists in DB, prioritize one with timestamp or present status
           if (c.status === "present" || c.in_time) {
             attMap.set(key, { ...c, date: normDate });
           }
         }
       }
+    }
 
-      // Merge only truly pending offline records from the pending queue
-      const pendingRows = loadPending();
-      for (const p of pendingRows) {
-        const normDate = normalizeDate(p.attendance_date);
-        const key = `${p.employee_id}_${normDate}_${p.shift}`;
-        if (!attMap.has(key)) {
-          attMap.set(key, dbToAttendance(p));
+    // Merge all local records so no locally marked attendance (e.g. 01/08/2026 - 06/08/2026) is ever lost
+    const missingCloudRowsMap = new Map<string, Row>();
+    for (const loc of localSources) {
+      if (!loc || !loc.employee_id || !loc.date) continue;
+      const normDate = normalizeDate(loc.date);
+      const shift = loc.shift || "morning";
+      const key = `${loc.employee_id}_${normDate}_${shift}`;
+      const normalizedLoc: AttendanceRecord = { ...loc, date: normDate, shift };
+
+      const existingInCloud = attMap.get(key);
+      if (!existingInCloud) {
+        attMap.set(key, normalizedLoc);
+        missingCloudRowsMap.set(key, attendanceToDb(normalizedLoc));
+      } else {
+        // If local has presence or in_time but cloud has absent/none, preserve local and sync
+        if (
+          (normalizedLoc.status === "present" || normalizedLoc.in_time) &&
+          existingInCloud.status !== "present"
+        ) {
+          const merged = { ...existingInCloud, ...normalizedLoc, id: existingInCloud.id };
+          attMap.set(key, merged);
+          missingCloudRowsMap.set(key, attendanceToDb(merged));
         }
       }
-
-      cache.attendance = Array.from(attMap.values()).sort((a, b) => a.date.localeCompare(b.date));
     }
+
+    const missingCloudRowsToUpload = Array.from(missingCloudRowsMap.values());
+
+    // Merge pending offline queue
+    const pendingRows = loadPending();
+    for (const p of pendingRows) {
+      const normDate = normalizeDate(p.attendance_date);
+      const shift = p.shift || "morning";
+      const key = `${p.employee_id}_${normDate}_${shift}`;
+      const pendingRecord = dbToAttendance({ ...p, attendance_date: normDate, shift });
+      attMap.set(key, pendingRecord);
+    }
+
+    cache.attendance = Array.from(attMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
     if (lv.data) cache.leaves = lv.data.map(dbToLeave);
     if (adv.data) cache.advances = adv.data.map(dbToAdvance);
@@ -459,6 +495,12 @@ async function hydrate(): Promise<boolean> {
 
     ensureRealtimeSubscription();
     void flushPendingAttendance();
+
+    // Auto-upload any recovered local attendance rows to Supabase
+    if (missingCloudRowsToUpload.length > 0 && sb) {
+      void pushAttendanceRowsBatch(missingCloudRowsToUpload);
+    }
+
     return true;
   } catch (e) {
     console.error("[cloud-hydrate]", e);
@@ -475,6 +517,7 @@ async function hydrate(): Promise<boolean> {
 function persistLocal() {
   saveLocal("tsa_employees", cache.employees);
   saveLocal("tsa_attendance", cache.attendance);
+  saveLocal("tsa_attendance_backup", cache.attendance);
   saveLocal("tsa_leaves", cache.leaves);
   saveLocal("tsa_advances", cache.advances);
   saveLocal("tsa_salaries", cache.salaries);
@@ -533,7 +576,8 @@ function ensureRealtimeSubscription() {
       });
     })
     .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, (p) => {
-      if (p.eventType === "DELETE" && p.old) applyDelete(cache.attendance, (p.old as Row).id);
+      if (p.eventType === "DELETE" && p.old)
+        applyAttendanceDelete(cache.attendance, (p.old as Row).id);
       else if (p.new) applyAttendanceUpsert(cache.attendance, dbToAttendance(p.new as Row));
       persistLocal();
       updateSyncState({
@@ -680,7 +724,12 @@ type PendingRow = Row;
 function loadPending(): PendingRow[] {
   if (!isBrowser) return [];
   try {
-    return JSON.parse(localStorage.getItem(PENDING_KEY) ?? "[]") as PendingRow[];
+    const raw = JSON.parse(localStorage.getItem(PENDING_KEY) ?? "[]") as PendingRow[];
+    return raw.map((r) => ({
+      ...r,
+      attendance_date: normalizeDate(r.attendance_date),
+      shift: r.shift || "morning",
+    }));
   } catch {
     return [];
   }
@@ -689,25 +738,29 @@ function savePending(rows: PendingRow[]) {
   saveLocal(PENDING_KEY, rows);
 }
 function queuePending(row: PendingRow) {
+  const normDate = normalizeDate(row.attendance_date);
+  const shift = row.shift || "morning";
   const rows = loadPending().filter(
     (r) =>
       !(
         r.employee_id === row.employee_id &&
-        r.attendance_date === row.attendance_date &&
-        r.shift === row.shift
+        normalizeDate(r.attendance_date) === normDate &&
+        (r.shift || "morning") === shift
       ),
   );
-  rows.push(row);
+  rows.push({ ...row, attendance_date: normDate, shift });
   savePending(rows);
 }
 function dequeuePending(row: PendingRow) {
+  const normDate = normalizeDate(row.attendance_date);
+  const shift = row.shift || "morning";
   savePending(
     loadPending().filter(
       (r) =>
         !(
           r.employee_id === row.employee_id &&
-          r.attendance_date === row.attendance_date &&
-          r.shift === row.shift
+          normalizeDate(r.attendance_date) === normDate &&
+          (r.shift || "morning") === shift
         ),
     ),
   );
@@ -751,7 +804,30 @@ export async function pushAttendanceRowsBatch(
 ): Promise<{ success: boolean; count: number }> {
   if (!sb || rows.length === 0) return { success: false, count: 0 };
 
-  const payloads = rows.map((r) => {
+  // Strictly deduplicate by conflict key (employee_id + normalized attendance_date + shift)
+  // to avoid PostgreSQL "ON CONFLICT DO UPDATE command cannot affect row a second time" error.
+  const dedupMap = new Map<string, PendingRow>();
+  for (const r of rows) {
+    if (!r || !r.employee_id || !r.attendance_date) continue;
+    const normDate = normalizeDate(r.attendance_date);
+    const shift = r.shift || "morning";
+    const key = `${r.employee_id}_${normDate}_${shift}`;
+    const normalizedRow: PendingRow = { ...r, attendance_date: normDate, shift };
+
+    const existing = dedupMap.get(key);
+    if (!existing) {
+      dedupMap.set(key, normalizedRow);
+    } else {
+      if (normalizedRow.status === "present" || normalizedRow.in_time) {
+        dedupMap.set(key, { ...existing, ...normalizedRow });
+      }
+    }
+  }
+
+  const dedupedRows = Array.from(dedupMap.values());
+  if (dedupedRows.length === 0) return { success: true, count: 0 };
+
+  const payloads = dedupedRows.map((r) => {
     const { id: _id, ...p } = r;
     return p;
   });
@@ -760,7 +836,7 @@ export async function pushAttendanceRowsBatch(
   const chunkSize = 50;
   for (let i = 0; i < payloads.length; i += chunkSize) {
     const chunk = payloads.slice(i, i + chunkSize);
-    const chunkRows = rows.slice(i, i + chunkSize);
+    const chunkRows = dedupedRows.slice(i, i + chunkSize);
 
     const { data, error } = await sb
       .from("attendance")
@@ -794,7 +870,7 @@ export async function pushAttendanceRowsBatch(
 
   bump();
   fire("Attendance");
-  return { success: savedCount > 0 || rows.length === 0, count: savedCount };
+  return { success: savedCount > 0 || dedupedRows.length === 0, count: savedCount };
 }
 
 export async function flushPendingAttendance(): Promise<number> {
@@ -866,28 +942,62 @@ export function deleteEmployee(id: string) {
 
 // ---------- attendance ----------
 
-export function normalizeDate(d: string): string {
+export function normalizeDate(d: string | number | Date | null | undefined): string {
   if (!d) return "";
-  const trimmed = d.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  // Match DD/MM/YYYY or DD-MM-YYYY
-  const m1 = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
-  if (m1) {
-    const dd = m1[1].padStart(2, "0");
-    const mm = m1[2].padStart(2, "0");
-    return `${m1[3]}-${mm}-${dd}`;
+  if (typeof d !== "string") {
+    try {
+      const dt = new Date(d);
+      if (!isNaN(dt.getTime())) {
+        return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+      }
+    } catch {
+      return "";
+    }
   }
-  // Match DD/MM/YY or DD-MM-YY
-  const m2 = trimmed.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2})$/);
-  if (m2) {
-    const dd = m2[1].padStart(2, "0");
-    const mm = m2[2].padStart(2, "0");
-    const yy = Number(m2[3]) < 50 ? `20${m2[3]}` : `19${m2[3]}`;
-    return `${yy}-${mm}-${dd}`;
+  const trimmed = String(d).trim();
+  if (!trimmed) return "";
+
+  // If ISO string with T or space followed by time: extract leading date portion
+  const firstPart = trimmed.split(/[T ]/)[0];
+
+  // Match YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD (1 or 2 digit month/day)
+  const ymd = firstPart.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (ymd) {
+    const y = ymd[1];
+    const m = ymd[2].padStart(2, "0");
+    const day = ymd[3].padStart(2, "0");
+    return `${y}-${m}-${day}`;
   }
-  if (trimmed.includes("T")) {
-    return trimmed.slice(0, 10);
+
+  // Match DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY (1 or 2 digit day/month)
+  const dmy = firstPart.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (dmy) {
+    const day = dmy[1].padStart(2, "0");
+    const m = dmy[2].padStart(2, "0");
+    const y = dmy[3];
+    return `${y}-${m}-${day}`;
   }
+
+  // Match DD/MM/YY or DD-MM-YY (2 digit year)
+  const dmy2 = firstPart.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})$/);
+  if (dmy2) {
+    const day = dmy2[1].padStart(2, "0");
+    const m = dmy2[2].padStart(2, "0");
+    const yVal = Number(dmy2[3]);
+    const y = yVal < 50 ? `20${dmy2[3]}` : `19${dmy2[3]}`;
+    return `${y}-${m}-${day}`;
+  }
+
+  // Fallback: Try Date.parse
+  try {
+    const parsed = new Date(trimmed);
+    if (!isNaN(parsed.getTime())) {
+      return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}-${String(parsed.getDate()).padStart(2, "0")}`;
+    }
+  } catch {
+    /* fallback */
+  }
+
   return trimmed;
 }
 
@@ -897,8 +1007,14 @@ export function getAttendance(): AttendanceRecord[] {
 export function saveAttendance(list: AttendanceRecord[]) {
   cache.attendance = list.map((r) => ({ ...r, date: normalizeDate(r.date) }));
   saveLocal("tsa_attendance", cache.attendance);
+  saveLocal("tsa_attendance_backup", cache.attendance);
   bump();
   fire("Attendance");
+}
+
+export function getAttendanceForMonth(month: string): AttendanceRecord[] {
+  const normMonth = month.trim().slice(0, 7);
+  return cache.attendance.filter((r) => normalizeDate(r.date).startsWith(normMonth));
 }
 
 let isAutoSundayRunning = false;
@@ -1202,7 +1318,12 @@ export function newId(): string {
   return crypto.randomUUID();
 }
 export function todayString(): string {
-  return new Date().toISOString().slice(0, 10);
+  const istMs = Date.now() + 5.5 * 60 * 60 * 1000;
+  const ist = new Date(istMs);
+  const y = ist.getUTCFullYear();
+  const m = String(ist.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(ist.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 export function daysInMonth(month: string): number {
   const [y, m] = month.split("-").map(Number);

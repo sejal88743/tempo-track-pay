@@ -18,7 +18,7 @@ export function generateSalaries(month: string): SalaryRecord[] {
   const total = daysInMonth(month);
   const [y, m] = month.split("-").map(Number);
   const monthStart = `${month}-01`;
-  const monthEnd = new Date(y, m, 0).toISOString().slice(0, 10);
+  const monthEnd = `${month}-${String(total).padStart(2, "0")}`;
 
   const emps = getEmployees().filter((e) => e.active);
 

@@ -152,7 +152,8 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
   const leaveMap = useMemo(() => {
     const monthStart = `${month}-01`;
     const [y, mo] = month.split("-").map(Number);
-    const monthEnd = new Date(y, mo, 0).toISOString().slice(0, 10);
+    const totalDaysInThisMonth = new Date(y, mo, 0).getDate();
+    const monthEnd = `${month}-${pad2(totalDaysInThisMonth)}`;
     const approved = getLeaves().filter(
       (l) => l.status === "approved" && l.from_date <= monthEnd && l.to_date >= monthStart,
     );
@@ -231,14 +232,16 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
   const markCell = useCallback(
     async (empId: string, dd: string, status: "present" | "absent") => {
       const dateStr = `${month}-${dd}`;
+      const normDateStr = normalizeDate(dateStr);
       const all = getAttendance();
       const existing = all.find(
-        (a) => a.employee_id === empId && a.date === dateStr && a.shift === "morning",
+        (a) =>
+          a.employee_id === empId && normalizeDate(a.date) === normDateStr && a.shift === "morning",
       );
       const record: AttendanceRecord = {
         id: existing?.id ?? newId(),
         employee_id: empId,
-        date: dateStr,
+        date: normDateStr,
         shift: "morning",
         status,
         in_time: existing?.in_time ?? (status === "present" ? new Date().toISOString() : undefined),
@@ -283,18 +286,22 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
     }
 
     const dateStr = `${month}-${targetDay}`;
+    const normDateStr = normalizeDate(dateStr);
     setIsBulkSaving(true);
 
     try {
       const all = getAttendance();
       const recordsToUpsert: AttendanceRecord[] = targetWorkers.map((e) => {
         const existing = all.find(
-          (a) => a.employee_id === e.id && a.date === dateStr && a.shift === "morning",
+          (a) =>
+            a.employee_id === e.id &&
+            normalizeDate(a.date) === normDateStr &&
+            a.shift === "morning",
         );
         return {
           id: existing?.id ?? newId(),
           employee_id: e.id,
-          date: dateStr,
+          date: normDateStr,
           shift: "morning",
           status,
           in_time:
@@ -337,13 +344,17 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
         for (const dd of dates) {
           if (isSunday(dd)) continue; // Skip Sunday
           const dateStr = `${month}-${dd}`;
+          const normDateStr = normalizeDate(dateStr);
           const existing = all.find(
-            (a) => a.employee_id === e.id && a.date === dateStr && a.shift === "morning",
+            (a) =>
+              a.employee_id === e.id &&
+              normalizeDate(a.date) === normDateStr &&
+              a.shift === "morning",
           );
           recordsToUpsert.push({
             id: existing?.id ?? newId(),
             employee_id: e.id,
-            date: dateStr,
+            date: normDateStr,
             shift: "morning",
             status: "present",
             in_time: existing?.in_time ?? new Date().toISOString(),
@@ -368,17 +379,21 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
   // Quick mark all workers for a specific day from column header click
   const handleQuickColumnMark = async (dd: string, status: "present" | "absent") => {
     const dateStr = `${month}-${dd}`;
+    const normDateStr = normalizeDate(dateStr);
     setIsBulkSaving(true);
     try {
       const all = getAttendance();
       const recordsToUpsert: AttendanceRecord[] = sortedEmps.map((e) => {
         const existing = all.find(
-          (a) => a.employee_id === e.id && a.date === dateStr && a.shift === "morning",
+          (a) =>
+            a.employee_id === e.id &&
+            normalizeDate(a.date) === normDateStr &&
+            a.shift === "morning",
         );
         return {
           id: existing?.id ?? newId(),
           employee_id: e.id,
-          date: dateStr,
+          date: normDateStr,
           shift: "morning",
           status,
           in_time:
@@ -1395,15 +1410,404 @@ function PasswordModal({ onSuccess, onClose }: { onSuccess: () => void; onClose:
   );
 }
 
+// ── 1-Year Worker Attendance View ──────────────────────────────────────────────
+interface YearlyAttendanceReportProps {
+  year: string;
+  onSelectMonth: (month: string) => void;
+}
+
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+function YearlyAttendanceReport({ year, onSelectMonth }: YearlyAttendanceReportProps) {
+  const syncVersion = useCloudSync();
+  const emps = useMemo(() => getEmployees().filter((e) => e.active), [syncVersion]);
+  const attendance = useMemo(() => getAttendance(), [syncVersion]);
+  const leaves = useMemo(() => getLeaves().filter((l) => l.status === "approved"), [syncVersion]);
+
+  // Compute 12-month data for each worker in the selected year
+  const yearlyData = useMemo(() => {
+    return emps.map((e) => {
+      const monthStats = Array.from({ length: 12 }, (_, mIdx) => {
+        const monthNum = pad2(mIdx + 1);
+        const monthKey = `${year}-${monthNum}`;
+        const totalDays = daysInMonthCount(monthKey);
+
+        // Month attendance
+        const monthAtt = attendance.filter(
+          (a) =>
+            a.employee_id === e.id &&
+            a.shift === "morning" &&
+            normalizeDate(a.date).startsWith(monthKey),
+        );
+
+        let presentCount = 0;
+        let absentCount = 0;
+        let lateCount = 0;
+
+        for (const a of monthAtt) {
+          if (a.status === "present") presentCount++;
+          else if (a.status === "late") {
+            presentCount++;
+            lateCount++;
+          } else if (a.status === "absent") absentCount++;
+        }
+
+        // Month leaves
+        const monthStart = `${monthKey}-01`;
+        const monthEnd = `${monthKey}-${pad2(totalDays)}`;
+        const empLeaves = leaves.filter(
+          (l) => l.employee_id === e.id && l.from_date <= monthEnd && l.to_date >= monthStart,
+        );
+        let leaveDays = 0;
+        for (const l of empLeaves) {
+          const from = new Date(l.from_date);
+          const to = new Date(l.to_date);
+          const s = new Date(Math.max(from.getTime(), new Date(monthStart).getTime()));
+          const ed = new Date(Math.min(to.getTime(), new Date(monthEnd).getTime()));
+          const days = Math.max(0, Math.round((ed.getTime() - s.getTime()) / 86400000) + 1);
+          leaveDays += days;
+        }
+
+        return {
+          monthKey,
+          monthName: MONTH_NAMES[mIdx],
+          present: presentCount,
+          absent: absentCount,
+          late: lateCount,
+          leaves: leaveDays,
+          totalDays,
+        };
+      });
+
+      const totalYearPresent = monthStats.reduce((sum, m) => sum + m.present, 0);
+      const totalYearAbsent = monthStats.reduce((sum, m) => sum + m.absent, 0);
+      const totalYearLeaves = monthStats.reduce((sum, m) => sum + m.leaves, 0);
+      const totalRecorded = totalYearPresent + totalYearAbsent;
+      const attendancePercent =
+        totalRecorded > 0 ? Math.round((totalYearPresent / totalRecorded) * 100) : 0;
+
+      return {
+        id: e.id,
+        name: e.full_name,
+        role: e.role ?? "",
+        monthStats,
+        totalYearPresent,
+        totalYearAbsent,
+        totalYearLeaves,
+        attendancePercent,
+      };
+    });
+  }, [emps, attendance, leaves, year]);
+
+  // Sorting for Yearly Report
+  const {
+    sorted: sortedYearly,
+    sort: ySort,
+    toggle: yToggle,
+  } = useSortable(yearlyData, {
+    name: (r) => r.name,
+    role: (r) => r.role,
+    totalPresent: (r) => r.totalYearPresent,
+    totalAbsent: (r) => r.totalYearAbsent,
+    totalLeaves: (r) => r.totalYearLeaves,
+    percent: (r) => r.attendancePercent,
+  });
+
+  // Overall Year Aggregates
+  const companyTotalPresent = yearlyData.reduce((s, r) => s + r.totalYearPresent, 0);
+  const companyTotalAbsent = yearlyData.reduce((s, r) => s + r.totalYearAbsent, 0);
+  const companyAvgPercent =
+    yearlyData.length > 0
+      ? Math.round(yearlyData.reduce((s, r) => s + r.attendancePercent, 0) / yearlyData.length)
+      : 0;
+
+  // Export 1-Year Attendance CSV
+  const downloadYearlyCSV = () => {
+    const headers = [
+      "Worker Name",
+      "Role",
+      ...MONTH_NAMES.map((m) => `${m} ${year} (Present)`),
+      "Total Present (Year)",
+      "Total Absent (Year)",
+      "Total Leaves (Year)",
+      "Attendance %",
+    ];
+
+    const rows = sortedYearly.map((r) => [
+      r.name,
+      r.role,
+      ...r.monthStats.map((m) => String(m.present)),
+      String(r.totalYearPresent),
+      String(r.totalYearAbsent),
+      String(r.totalYearLeaves),
+      `${r.attendancePercent}%`,
+    ]);
+
+    const csvContent = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${cell}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `attendance_1year_${year}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`1-Year Attendance report (${year}) CSV download ho gaya!`);
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Action Bar */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={downloadYearlyCSV}
+            className="cursor-pointer"
+          >
+            <Download className="size-4 mr-1.5" /> 1-Year CSV Export
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.print()}
+            className="cursor-pointer"
+          >
+            <Printer className="size-4 mr-1.5" /> Print
+          </Button>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          Showing 12-Month attendance for <b>{sortedYearly.length}</b> active workers in year{" "}
+          <b>{year}</b>
+        </div>
+      </div>
+
+      {/* Summary Cards for Year */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <Card className="p-4 text-center border-blue-200 bg-blue-50/40 dark:bg-blue-950/20">
+          <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+            {sortedYearly.length}
+          </div>
+          <div className="text-xs font-semibold text-blue-800 dark:text-blue-300">
+            Active Workers
+          </div>
+        </Card>
+        <Card className="p-4 text-center border-green-200 bg-green-50/40 dark:bg-green-950/20">
+          <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+            {companyTotalPresent}
+          </div>
+          <div className="text-xs font-semibold text-green-800 dark:text-green-300">
+            Total Present Marks
+          </div>
+        </Card>
+        <Card className="p-4 text-center border-red-200 bg-red-50/40 dark:bg-red-950/20">
+          <div className="text-2xl font-bold text-red-600 dark:text-red-400">
+            {companyTotalAbsent}
+          </div>
+          <div className="text-xs font-semibold text-red-800 dark:text-red-300">
+            Total Absent Marks
+          </div>
+        </Card>
+        <Card className="p-4 text-center border-purple-200 bg-purple-50/40 dark:bg-purple-950/20">
+          <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+            {companyAvgPercent}%
+          </div>
+          <div className="text-xs font-semibold text-purple-800 dark:text-purple-300">
+            Avg Attendance Rate
+          </div>
+        </Card>
+      </div>
+
+      {/* Quick Month Selector Jump Bar */}
+      <Card className="p-3 bg-muted/40 border border-border shadow-xs">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5">
+            <Zap className="size-3.5 text-primary" /> Month Jump (Click to open detailed Monthly
+            Matrix):
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {MONTH_NAMES.map((name, idx) => {
+              const monthKey = `${year}-${pad2(idx + 1)}`;
+              return (
+                <Button
+                  key={monthKey}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onSelectMonth(monthKey)}
+                  className="h-7 px-2.5 text-xs font-medium hover:bg-primary hover:text-white transition-colors cursor-pointer"
+                >
+                  {name}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+      </Card>
+
+      {/* 1-Year Attendance Table */}
+      <Card className="overflow-x-auto shadow-xs">
+        <Table className="text-xs">
+          <TableHeader>
+            <TableRow className="bg-muted/70">
+              <TableHead className="w-10 text-center font-bold">#</TableHead>
+              <SortHeader
+                label="Worker Name"
+                sortKey="name"
+                sort={ySort}
+                toggle={yToggle}
+                className="min-w-[140px]"
+              />
+              <SortHeader
+                label="Role"
+                sortKey="role"
+                sort={ySort}
+                toggle={yToggle}
+                className="min-w-[90px]"
+              />
+              {MONTH_NAMES.map((m, idx) => (
+                <TableHead
+                  key={m}
+                  className="text-center font-bold px-1 cursor-pointer hover:text-primary transition-colors"
+                  title={`Open ${m} ${year} Monthly Matrix`}
+                  onClick={() => onSelectMonth(`${year}-${pad2(idx + 1)}`)}
+                >
+                  {m}
+                </TableHead>
+              ))}
+              <SortHeader
+                label="Total P"
+                sortKey="totalPresent"
+                sort={ySort}
+                toggle={yToggle}
+                className="text-center font-bold text-green-700 bg-green-50/50 dark:bg-green-950/20"
+                align="center"
+              />
+              <SortHeader
+                label="Total A"
+                sortKey="totalAbsent"
+                sort={ySort}
+                toggle={yToggle}
+                className="text-center font-bold text-red-700 bg-red-50/50 dark:bg-red-950/20"
+                align="center"
+              />
+              <SortHeader
+                label="Leaves"
+                sortKey="totalLeaves"
+                sort={ySort}
+                toggle={yToggle}
+                className="text-center font-bold text-amber-700"
+                align="center"
+              />
+              <SortHeader
+                label="%"
+                sortKey="percent"
+                sort={ySort}
+                toggle={yToggle}
+                className="text-center font-bold"
+                align="center"
+              />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sortedYearly.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={17} className="text-center py-8 text-muted-foreground">
+                  Koi active worker nahi mila
+                </TableCell>
+              </TableRow>
+            )}
+            {sortedYearly.map((r, idx) => (
+              <TableRow key={r.id} className="hover:bg-muted/40 transition-colors">
+                <TableCell className="text-center font-medium text-muted-foreground">
+                  {idx + 1}
+                </TableCell>
+                <TableCell className="font-semibold text-foreground whitespace-nowrap">
+                  {r.name}
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  <Badge variant="secondary" className="text-[11px] font-normal">
+                    {r.role}
+                  </Badge>
+                </TableCell>
+                {r.monthStats.map((m) => (
+                  <TableCell
+                    key={m.monthKey}
+                    className="text-center px-1 cursor-pointer hover:bg-primary/10 transition-colors"
+                    onClick={() => onSelectMonth(m.monthKey)}
+                    title={`${r.name} - ${m.monthName} ${year}: ${m.present} Present, ${m.absent} Absent. Click to view Monthly Matrix`}
+                  >
+                    {m.present > 0 ? (
+                      <span className="inline-block px-1.5 py-0.5 rounded font-bold text-[11px] bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300">
+                        {m.present}
+                      </span>
+                    ) : m.absent > 0 ? (
+                      <span className="inline-block px-1.5 py-0.5 rounded font-medium text-[11px] bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                        0
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground/50 text-[11px]">—</span>
+                    )}
+                  </TableCell>
+                ))}
+                <TableCell className="text-center font-bold text-green-700 dark:text-green-400 bg-green-50/30 dark:bg-green-950/10">
+                  {r.totalYearPresent}
+                </TableCell>
+                <TableCell className="text-center font-bold text-red-600 dark:text-red-400 bg-red-50/30 dark:bg-red-950/10">
+                  {r.totalYearAbsent}
+                </TableCell>
+                <TableCell className="text-center font-medium text-amber-700 dark:text-amber-400">
+                  {r.totalYearLeaves}
+                </TableCell>
+                <TableCell className="text-center font-bold">
+                  <Badge
+                    variant={
+                      r.attendancePercent >= 80
+                        ? "default"
+                        : r.attendancePercent >= 60
+                          ? "secondary"
+                          : "destructive"
+                    }
+                    className="text-[10px] px-1.5 py-0"
+                  >
+                    {r.attendancePercent}%
+                  </Badge>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Card>
+    </div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────
 function ReportsPage() {
   useCloudSync();
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
+  const currentYear = String(now.getFullYear());
   const todayStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
 
-  const [tab, setTab] = useState<"matrix" | "daily">("matrix");
+  const [tab, setTab] = useState<"matrix" | "yearly" | "daily">("matrix");
   const [month, setMonth] = useState(currentMonth);
+  const [year, setYear] = useState(currentYear);
   const [date, setDate] = useState(todayStr);
   const [editMode, setEditMode] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -1414,6 +1818,12 @@ function ReportsPage() {
     } else {
       setShowPasswordModal(true);
     }
+  };
+
+  const handleSelectMonthFromYearly = (m: string) => {
+    setMonth(m);
+    setTab("matrix");
+    toast.info(`Switched to Monthly Matrix: ${formatMonthTitle(m)}`);
   };
 
   return (
@@ -1430,16 +1840,16 @@ function ReportsPage() {
 
       {/* Page Title */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Reports &amp; Attendance Analysis</h1>
         <p className="text-sm text-muted-foreground">
-          Monthly attendance matrix &amp; daily summary
+          1-Year worker attendance overview, monthly matrix &amp; daily sync logs
         </p>
       </div>
 
       {/* ── STICKY DATE & CONTROLS HEADER (Sticks to top on scroll) ── */}
       <div className="sticky top-11 z-30 bg-background/95 backdrop-blur-md -mx-6 px-6 py-2.5 border-b shadow-xs space-y-2.5">
         {/* Tab switcher & Edit Mode button */}
-        <div className="flex gap-2 border-b border-border/60 pb-0 items-end">
+        <div className="flex gap-2 border-b border-border/60 pb-0 items-end flex-wrap">
           <button
             onClick={() => setTab("matrix")}
             className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold border-b-2 transition-colors cursor-pointer ${
@@ -1449,6 +1859,16 @@ function ReportsPage() {
             }`}
           >
             <CalendarDays className="size-4" /> Monthly Matrix
+          </button>
+          <button
+            onClick={() => setTab("yearly")}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold border-b-2 transition-colors cursor-pointer ${
+              tab === "yearly"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Calendar className="size-4" /> 1-Year Attendance
           </button>
           <button
             onClick={() => setTab("daily")}
@@ -1533,6 +1953,59 @@ function ReportsPage() {
             </div>
             <div className="text-xs text-muted-foreground">Always visible while scrolling</div>
           </div>
+        ) : tab === "yearly" ? (
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold text-muted-foreground flex items-center gap-1">
+                <Calendar className="size-3.5 text-primary" /> Year:
+              </span>
+              <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-lg border border-border">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 h-7 w-7 cursor-pointer"
+                  onClick={() => setYear((y) => String(Number(y) - 1))}
+                  title="Previous Year"
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <select
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                  className="h-7 px-2 text-xs bg-background rounded border border-input font-bold"
+                >
+                  <option value="2024">2024</option>
+                  <option value="2025">2025</option>
+                  <option value="2026">2026</option>
+                  <option value="2027">2027</option>
+                  <option value="2028">2028</option>
+                </select>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 h-7 w-7 cursor-pointer"
+                  onClick={() => setYear((y) => String(Number(y) + 1))}
+                  title="Next Year"
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
+              {year !== currentYear && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs px-2.5 cursor-pointer"
+                  onClick={() => setYear(currentYear)}
+                >
+                  <RotateCcw className="size-3 mr-1" /> This Year ({currentYear})
+                </Button>
+              )}
+              <span className="text-sm font-bold text-foreground ml-1">Year {year} Overview</span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Month-wise worker attendance for 1 Year
+            </div>
+          </div>
         ) : (
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap">
@@ -1584,6 +2057,11 @@ function ReportsPage() {
 
       {/* Monthly Matrix View */}
       {tab === "matrix" && <MonthlyMatrix month={month} editMode={editMode} />}
+
+      {/* 1-Year Attendance View */}
+      {tab === "yearly" && (
+        <YearlyAttendanceReport year={year} onSelectMonth={handleSelectMonthFromYearly} />
+      )}
 
       {/* Daily Report View */}
       {tab === "daily" && <DailyReport date={date} />}

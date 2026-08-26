@@ -20,3 +20,4 @@ export const Route = createFileRoute("/mcp")({
     },
   },
 });
+

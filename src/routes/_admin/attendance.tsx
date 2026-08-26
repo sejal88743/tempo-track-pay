@@ -45,7 +45,12 @@ import { applySundayRule, isSunday, isMonday } from "@/lib/auto-attendance";
 export const Route = createFileRoute("/_admin/attendance")({ component: AttendancePage });
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  const istMs = Date.now() + 5.5 * 60 * 60 * 1000;
+  const ist = new Date(istMs);
+  const y = ist.getUTCFullYear();
+  const m = String(ist.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(ist.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function stepDate(date: string, days: number) {
