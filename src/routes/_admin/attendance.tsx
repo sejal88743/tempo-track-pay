@@ -94,9 +94,16 @@ function AttendancePage() {
 
   const attMap = useMemo(() => {
     const m = new Map<string, AttendanceRecord>();
-    attRecords.filter((r) => r.shift === shift).forEach((r) => m.set(r.employee_id, r));
+    attRecords.forEach((r) => {
+      if (!eveningEnabled || r.shift === shift) {
+        const prev = m.get(r.employee_id);
+        if (!prev || r.status === "present" || r.status === "late") {
+          m.set(r.employee_id, r);
+        }
+      }
+    });
     return m;
-  }, [attRecords, shift]);
+  }, [attRecords, shift, eveningEnabled]);
 
   const update = async (employee_id: string, patch: Partial<AttendanceRecord>) => {
     const norm = normalizeDate(date) || todayISO();

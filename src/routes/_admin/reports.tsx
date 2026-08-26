@@ -133,15 +133,18 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
 
   // Build attendance lookup: empId -> dateStr -> status
   const attMap = useMemo(() => {
-    const all = getAttendance().filter(
-      (a) => normalizeDate(a.date).startsWith(month) && a.shift === "morning",
-    );
+    const all = getAttendance().filter((a) => normalizeDate(a.date).startsWith(month));
     const m = new Map<string, Map<string, string>>();
     for (const a of all) {
       const normDate = normalizeDate(a.date);
       const dd = normDate.slice(8, 10);
       if (!m.has(a.employee_id)) m.set(a.employee_id, new Map());
-      m.get(a.employee_id)!.set(dd, a.status);
+      const empDateMap = m.get(a.employee_id)!;
+      const prevStatus = empDateMap.get(dd);
+      // Priority: if any record on that date is present or late, record it
+      if (!prevStatus || a.status === "present" || a.status === "late") {
+        empDateMap.set(dd, a.status);
+      }
     }
     return m;
     // revision is intentionally in deps to force re-read on edits
@@ -235,14 +238,13 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
       const normDateStr = normalizeDate(dateStr);
       const all = getAttendance();
       const existing = all.find(
-        (a) =>
-          a.employee_id === empId && normalizeDate(a.date) === normDateStr && a.shift === "morning",
+        (a) => a.employee_id === empId && normalizeDate(a.date) === normDateStr,
       );
       const record: AttendanceRecord = {
         id: existing?.id ?? newId(),
         employee_id: empId,
         date: normDateStr,
-        shift: "morning",
+        shift: existing?.shift ?? "morning",
         status,
         in_time: existing?.in_time ?? (status === "present" ? new Date().toISOString() : undefined),
         method: "manual",
@@ -293,16 +295,13 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
       const all = getAttendance();
       const recordsToUpsert: AttendanceRecord[] = targetWorkers.map((e) => {
         const existing = all.find(
-          (a) =>
-            a.employee_id === e.id &&
-            normalizeDate(a.date) === normDateStr &&
-            a.shift === "morning",
+          (a) => a.employee_id === e.id && normalizeDate(a.date) === normDateStr,
         );
         return {
           id: existing?.id ?? newId(),
           employee_id: e.id,
           date: normDateStr,
-          shift: "morning",
+          shift: existing?.shift ?? "morning",
           status,
           in_time:
             existing?.in_time ?? (status === "present" ? new Date().toISOString() : undefined),
@@ -346,16 +345,13 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
           const dateStr = `${month}-${dd}`;
           const normDateStr = normalizeDate(dateStr);
           const existing = all.find(
-            (a) =>
-              a.employee_id === e.id &&
-              normalizeDate(a.date) === normDateStr &&
-              a.shift === "morning",
+            (a) => a.employee_id === e.id && normalizeDate(a.date) === normDateStr,
           );
           recordsToUpsert.push({
             id: existing?.id ?? newId(),
             employee_id: e.id,
             date: normDateStr,
-            shift: "morning",
+            shift: existing?.shift ?? "morning",
             status: "present",
             in_time: existing?.in_time ?? new Date().toISOString(),
             method: "manual",
@@ -385,16 +381,13 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
       const all = getAttendance();
       const recordsToUpsert: AttendanceRecord[] = sortedEmps.map((e) => {
         const existing = all.find(
-          (a) =>
-            a.employee_id === e.id &&
-            normalizeDate(a.date) === normDateStr &&
-            a.shift === "morning",
+          (a) => a.employee_id === e.id && normalizeDate(a.date) === normDateStr,
         );
         return {
           id: existing?.id ?? newId(),
           employee_id: e.id,
           date: normDateStr,
-          shift: "morning",
+          shift: existing?.shift ?? "morning",
           status,
           in_time:
             existing?.in_time ?? (status === "present" ? new Date().toISOString() : undefined),
@@ -893,7 +886,13 @@ function DailyReport({ date }: { date: string }) {
   );
 
   const summary = useMemo(() => {
-    const m = new Map(att.filter((a) => a.shift === "morning").map((a) => [a.employee_id, a]));
+    const m = new Map<string, (typeof att)[0]>();
+    for (const a of att) {
+      const prev = m.get(a.employee_id);
+      if (!prev || a.status === "present" || a.status === "late") {
+        m.set(a.employee_id, a);
+      }
+    }
     return {
       present: emps.filter((e) => ["present", "late"].includes(m.get(e.id)?.status ?? "")).length,
       absent: emps.filter((e) => !m.has(e.id) || m.get(e.id)?.status === "absent").length,
@@ -920,12 +919,12 @@ function DailyReport({ date }: { date: string }) {
 
   // Single row quick status update with instant Supabase save
   const handleSingleStatus = async (empId: string, status: "present" | "absent" | "late") => {
-    const existing = att.find((a) => a.employee_id === empId && a.shift === "morning");
+    const existing = att.find((a) => a.employee_id === empId);
     const record: AttendanceRecord = {
       id: existing?.id ?? newId(),
       employee_id: empId,
       date,
-      shift: "morning",
+      shift: existing?.shift ?? "morning",
       status,
       in_time:
         existing?.in_time ??
@@ -951,12 +950,12 @@ function DailyReport({ date }: { date: string }) {
     setIsDailySaving(true);
     try {
       const recordsToUpsert: AttendanceRecord[] = targetWorkers.map((e) => {
-        const existing = att.find((a) => a.employee_id === e.id && a.shift === "morning");
+        const existing = att.find((a) => a.employee_id === e.id);
         return {
           id: existing?.id ?? newId(),
           employee_id: e.id,
           date,
-          shift: "morning",
+          shift: existing?.shift ?? "morning",
           status,
           in_time:
             existing?.in_time ?? (status === "present" ? new Date().toISOString() : undefined),
@@ -977,9 +976,14 @@ function DailyReport({ date }: { date: string }) {
     }
   };
 
+  const attFor = (id: string) => {
+    const records = att.filter((r) => r.employee_id === id);
+    return records.find((r) => r.status === "present" || r.status === "late") ?? records[0];
+  };
+
   const download = () => {
     const rows = sortedEmps.map((e) => {
-      const a = att.find((r) => r.employee_id === e.id && r.shift === "morning");
+      const a = attFor(e.id);
       return {
         name: e.full_name,
         role: e.role,
@@ -1012,8 +1016,6 @@ function DailyReport({ date }: { date: string }) {
   const month = date.slice(0, 7);
   const salaries = getSalaries().filter((s) => s.month === month);
   const empMap = new Map(getEmployees().map((e) => [e.id, e.full_name]));
-
-  const attFor = (id: string) => att.find((r) => r.employee_id === id && r.shift === "morning");
   const {
     sorted: sortedEmps,
     sort: dSort,
@@ -1162,7 +1164,7 @@ function DailyReport({ date }: { date: string }) {
               </TableRow>
             )}
             {sortedEmps.map((e) => {
-              const a = att.find((r) => r.employee_id === e.id && r.shift === "morning");
+              const a = attFor(e.id);
               const isSelected = selectedDailyIds.has(e.id);
 
               return (
@@ -1445,24 +1447,31 @@ function YearlyAttendanceReport({ year, onSelectMonth }: YearlyAttendanceReportP
         const monthKey = `${year}-${monthNum}`;
         const totalDays = daysInMonthCount(monthKey);
 
-        // Month attendance
+        // Month attendance (deduplicated by date, shift-agnostic)
         const monthAtt = attendance.filter(
-          (a) =>
-            a.employee_id === e.id &&
-            a.shift === "morning" &&
-            normalizeDate(a.date).startsWith(monthKey),
+          (a) => a.employee_id === e.id && normalizeDate(a.date).startsWith(monthKey),
         );
+
+        const dateMap = new Map<string, (typeof monthAtt)[0]>();
+        for (const a of monthAtt) {
+          const normD = normalizeDate(a.date);
+          const prev = dateMap.get(normD);
+          if (!prev || a.status === "present" || a.status === "late") {
+            dateMap.set(normD, a);
+          }
+        }
 
         let presentCount = 0;
         let absentCount = 0;
         let lateCount = 0;
 
-        for (const a of monthAtt) {
-          if (a.status === "present") presentCount++;
-          else if (a.status === "late") {
+        for (const a of Array.from(dateMap.values())) {
+          if (a.status === "present" || a.status === "late") {
             presentCount++;
-            lateCount++;
-          } else if (a.status === "absent") absentCount++;
+            if (a.status === "late") lateCount++;
+          } else if (a.status === "absent") {
+            absentCount++;
+          }
         }
 
         // Month leaves

@@ -23,10 +23,7 @@ export function generateSalaries(month: string): SalaryRecord[] {
   const emps = getEmployees().filter((e) => e.active);
 
   const att = getAttendance().filter(
-    (r) =>
-      r.shift === "morning" &&
-      normalizeDate(r.date) >= monthStart &&
-      normalizeDate(r.date) <= monthEnd,
+    (r) => normalizeDate(r.date) >= monthStart && normalizeDate(r.date) <= monthEnd,
   );
 
   const leaves = getLeaves().filter(

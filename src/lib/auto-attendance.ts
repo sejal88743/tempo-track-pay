@@ -37,8 +37,12 @@ function marksFor(date: string): Marks {
   const norm = normalizeDate(date);
   const m: Marks = new Map();
   for (const r of getAttendance()) {
-    if (normalizeDate(r.date) === norm && r.shift === "morning")
-      m.set(r.employee_id, { status: r.status, method: r.method, id: r.id });
+    if (normalizeDate(r.date) === norm) {
+      const prev = m.get(r.employee_id);
+      if (!prev || isPresent(r.status)) {
+        m.set(r.employee_id, { status: r.status, method: r.method, id: r.id });
+      }
+    }
   }
   return m;
 }

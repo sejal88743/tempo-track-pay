@@ -409,7 +409,6 @@ function WorkerPage() {
           (r) =>
             r.employee_id === emp.id &&
             normalizeDate(r.date).startsWith(monthPrefix) &&
-            r.shift === "morning" &&
             (r.status === "present" || r.status === "late"),
         )
         .map((r) => normalizeDate(r.date)),
@@ -434,7 +433,6 @@ function WorkerPage() {
             (r) =>
               r.employee_id === identified.id &&
               normalizeDate(r.date).startsWith(monthPrefix) &&
-              r.shift === "morning" &&
               (r.status === "present" || r.status === "late"),
           )
           .map((r) => normalizeDate(r.date)),
@@ -453,10 +451,7 @@ function WorkerPage() {
     const daysInMonth = new Date(y, m, 0).getDate();
     const perDayBase = emp.monthly_salary > 0 ? emp.monthly_salary / daysInMonth : 0;
     const recs = getAttendance().filter(
-      (r) =>
-        r.employee_id === emp.id &&
-        normalizeDate(r.date).startsWith(monthPrefix) &&
-        r.shift === "morning",
+      (r) => r.employee_id === emp.id && normalizeDate(r.date).startsWith(monthPrefix),
     );
     const byDate = new Map<string, (typeof recs)[0]>();
     for (const r of recs) {

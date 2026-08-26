@@ -66,11 +66,17 @@ function Dashboard() {
   useEffect(() => {
     const emps = getEmployees().filter((e) => e.active);
     const today = todayString();
-    const todayAtt = getAttendance().filter(
-      (r) => normalizeDate(r.date) === today && r.shift === "morning",
-    );
-    const present = todayAtt.filter((r) => r.status === "present" || r.status === "late").length;
-    const absent = todayAtt.filter((r) => r.status === "absent").length;
+    const todayAtt = getAttendance().filter((r) => normalizeDate(r.date) === today);
+    const dateMap = new Map<string, (typeof todayAtt)[0]>();
+    for (const r of todayAtt) {
+      const prev = dateMap.get(r.employee_id);
+      if (!prev || r.status === "present" || r.status === "late") {
+        dateMap.set(r.employee_id, r);
+      }
+    }
+    const todayUnique = Array.from(dateMap.values());
+    const present = todayUnique.filter((r) => r.status === "present" || r.status === "late").length;
+    const absent = todayUnique.filter((r) => r.status === "absent").length;
     const pendingAdv = getAdvances().filter((a) => a.status === "pending").length;
     const pendingLeaves = getLeaves().filter((l) => l.status === "pending").length;
     const biometricEnrolled = emps.filter((e) => e.biometric_enrolled).length;
@@ -106,12 +112,7 @@ function Dashboard() {
           value={counts.biometricEnrolled}
           tone="success"
         />
-        <Stat
-          icon={CheckCircle2}
-          label="Present Today (Morning)"
-          value={counts.present}
-          tone="success"
-        />
+        <Stat icon={CheckCircle2} label="Present Today" value={counts.present} tone="success" />
         <Stat icon={XCircle} label="Absent Today" value={counts.absent} tone="destructive" />
         <Stat
           icon={BadgeIndianRupee}
