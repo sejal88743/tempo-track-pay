@@ -170,11 +170,45 @@ function saveLocal<T>(k: string, v: T) {
   }
 }
 
-let version = 0;
-const listeners = new Set<() => void>();
-function bump() {
-  version++;
-  listeners.forEach((l) => {
+export type SyncState = {
+  status: "connected" | "syncing" | "offline" | "error";
+  lastSyncedAt: string | null;
+  pendingCount: number;
+  errorMessage?: string;
+};
+
+const PENDING_KEY = "tsa_pending_attendance";
+type PendingRow = Row;
+
+function loadPending(): PendingRow[] {
+  if (!isBrowser) return [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(PENDING_KEY) ?? "[]") as PendingRow[];
+    return raw.map((r) => ({
+      ...r,
+      attendance_date: normalizeDate(r.attendance_date),
+      shift: r.shift || "morning",
+    }));
+  } catch {
+    return [];
+  }
+}
+
+let currentSyncSnapshot: SyncState = {
+  status: "syncing",
+  lastSyncedAt: null,
+  pendingCount: 0,
+};
+
+export function getSyncStatus(): SyncState {
+  return currentSyncSnapshot;
+}
+
+let dataVersion = 0;
+const dataListeners = new Set<() => void>();
+function bumpData() {
+  dataVersion++;
+  dataListeners.forEach((l) => {
     try {
       l();
     } catch {
@@ -183,16 +217,63 @@ function bump() {
   });
 }
 
-// React hook — subscribes to cache changes so components re-render
-// when local writes or realtime events arrive.
+// Backward-compatible alias
+const bump = bumpData;
+
+let syncStatusVersion = 0;
+const syncStatusListeners = new Set<() => void>();
+function bumpSyncStatus() {
+  syncStatusVersion++;
+  syncStatusListeners.forEach((l) => {
+    try {
+      l();
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
+function updateSyncState(patch: Partial<SyncState>) {
+  const pending = loadPending().length;
+  const next: SyncState = {
+    ...currentSyncSnapshot,
+    ...patch,
+    pendingCount: pending,
+  };
+  if (
+    currentSyncSnapshot.status === next.status &&
+    currentSyncSnapshot.lastSyncedAt === next.lastSyncedAt &&
+    currentSyncSnapshot.pendingCount === next.pendingCount &&
+    currentSyncSnapshot.errorMessage === next.errorMessage
+  ) {
+    return;
+  }
+  currentSyncSnapshot = next;
+  bumpSyncStatus();
+}
+
+// React hook — subscribes to data cache changes so components re-render
+// ONLY when actual local writes or Supabase realtime events arrive.
 export function useCloudSync(): number {
   return useSyncExternalStore(
     (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
+      dataListeners.add(l);
+      return () => dataListeners.delete(l);
     },
-    () => version,
+    () => dataVersion,
     () => 0,
+  );
+}
+
+// React hook — subscribes ONLY to sync badge / connection status changes
+export function useSyncStatus(): SyncState {
+  return useSyncExternalStore(
+    (l) => {
+      syncStatusListeners.add(l);
+      return () => syncStatusListeners.delete(l);
+    },
+    () => currentSyncSnapshot,
+    () => currentSyncSnapshot,
   );
 }
 
@@ -366,31 +447,20 @@ function tempoToDb(t: Tempo): Row {
 
 // ---------- hydration + realtime ----------
 
-export type SyncState = {
-  status: "connected" | "syncing" | "offline" | "error";
-  lastSyncedAt: string | null;
-  pendingCount: number;
-  errorMessage?: string;
-};
-
-let syncState: SyncState = {
-  status: "syncing",
-  lastSyncedAt: null,
-  pendingCount: 0,
-};
-
-export function getSyncStatus(): SyncState {
-  return { ...syncState, pendingCount: loadPending().length };
-}
-
-function updateSyncState(patch: Partial<SyncState>) {
-  syncState = { ...syncState, ...patch };
-  bump();
-}
-
 let isHydrating = false;
-async function hydrate(): Promise<boolean> {
-  if (!isBrowser || !sb || isHydrating) return false;
+let lastHydrateTimestamp = 0;
+let initialHydratePromise: Promise<boolean> | null = null;
+
+export async function hydrate(force = false): Promise<boolean> {
+  if (!isBrowser || !sb) return false;
+  if (isHydrating) return false;
+
+  const now = Date.now();
+  // Don't re-fetch unless forced (like initial load or manual sync) or at least 2 minutes passed
+  if (!force && now - lastHydrateTimestamp < 120000) {
+    return true;
+  }
+
   isHydrating = true;
   updateSyncState({ status: "syncing" });
 
@@ -480,6 +550,7 @@ async function hydrate(): Promise<boolean> {
     if (tmp.data) cache.tempos = tmp.data.map(dbToTempo);
     if (st.data?.value) cache.settings = { ...DEFAULT_SETTINGS, ...(st.data.value as AppSettings) };
 
+    lastHydrateTimestamp = Date.now();
     persistLocal();
     updateSyncState({
       status: "connected",
@@ -491,7 +562,7 @@ async function hydrate(): Promise<boolean> {
       pendingCount: loadPending().length,
       errorMessage: undefined,
     });
-    bump();
+    bumpData();
 
     ensureRealtimeSubscription();
     void flushPendingAttendance();
@@ -514,6 +585,13 @@ async function hydrate(): Promise<boolean> {
   }
 }
 
+export function waitForInitialHydration(): Promise<boolean> {
+  if (!initialHydratePromise) {
+    initialHydratePromise = hydrate(true);
+  }
+  return initialHydratePromise;
+}
+
 function persistLocal() {
   saveLocal("tsa_employees", cache.employees);
   saveLocal("tsa_attendance", cache.attendance);
@@ -526,125 +604,60 @@ function persistLocal() {
 }
 
 let realtimeChannel: ReturnType<typeof sb.channel> | null = null;
+let isRealtimeSubscribing = false;
 
 function ensureRealtimeSubscription() {
-  if (!sb || realtimeChannel) return;
+  if (!sb || realtimeChannel || isRealtimeSubscribing) return;
+  isRealtimeSubscribing = true;
 
-  const applyUpsert = <T extends { id: string }>(arr: T[], next: T) => {
-    const i = arr.findIndex((x) => x.id === next.id);
-    if (i >= 0) arr[i] = next;
-    else arr.unshift(next);
-  };
+  try {
+    // Clean up any lingering channels to prevent "cannot add postgres_changes callbacks after subscribe"
+    const existingChannels = sb.getChannels();
+    for (const c of existingChannels) {
+      if (c.topic === "realtime:app-realtime-sync" || c.topic === "app-realtime-sync") {
+        try {
+          sb.removeChannel(c);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
 
-  const applyDelete = <T extends { id: string }>(arr: T[], id: string) => {
-    const i = arr.findIndex((x) => x.id === id);
-    if (i >= 0) arr.splice(i, 1);
-  };
+    const applyUpsert = <T extends { id: string }>(arr: T[], next: T) => {
+      const i = arr.findIndex((x) => x.id === next.id);
+      if (i >= 0) arr[i] = next;
+      else arr.unshift(next);
+    };
 
-  const applyAttendanceUpsert = (arr: AttendanceRecord[], next: AttendanceRecord) => {
-    const normDate = normalizeDate(next.date);
-    const item = { ...next, date: normDate };
-    const i = arr.findIndex(
-      (x) =>
-        x.id === item.id ||
-        (x.employee_id === item.employee_id &&
-          normalizeDate(x.date) === normDate &&
-          x.shift === item.shift),
-    );
-    if (i >= 0) arr[i] = item;
-    else arr.unshift(item);
-  };
+    const applyDelete = <T extends { id: string }>(arr: T[], id: string) => {
+      const i = arr.findIndex((x) => x.id === id);
+      if (i >= 0) arr.splice(i, 1);
+    };
 
-  const applyAttendanceDelete = (arr: AttendanceRecord[], id: string) => {
-    const i = arr.findIndex((x) => x.id === id);
-    if (i >= 0) arr.splice(i, 1);
-  };
+    const applyAttendanceUpsert = (arr: AttendanceRecord[], next: AttendanceRecord) => {
+      const normDate = normalizeDate(next.date);
+      const item = { ...next, date: normDate };
+      const i = arr.findIndex(
+        (x) =>
+          x.id === item.id ||
+          (x.employee_id === item.employee_id &&
+            normalizeDate(x.date) === normDate &&
+            x.shift === item.shift),
+      );
+      if (i >= 0) arr[i] = item;
+      else arr.unshift(item);
+    };
 
-  realtimeChannel = sb
-    .channel("app-realtime-sync")
-    .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, (p) => {
-      if (p.eventType === "DELETE" && p.old) applyDelete(cache.employees, (p.old as Row).id);
-      else if (p.new) applyUpsert(cache.employees, dbToEmployee(p.new as Row));
-      persistLocal();
-      updateSyncState({
-        status: "connected",
-        lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }),
-      });
-    })
-    .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, (p) => {
-      if (p.eventType === "DELETE" && p.old)
-        applyAttendanceDelete(cache.attendance, (p.old as Row).id);
-      else if (p.new) applyAttendanceUpsert(cache.attendance, dbToAttendance(p.new as Row));
-      persistLocal();
-      updateSyncState({
-        status: "connected",
-        lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }),
-      });
-    })
-    .on("postgres_changes", { event: "*", schema: "public", table: "leaves" }, (p) => {
-      if (p.eventType === "DELETE" && p.old) applyDelete(cache.leaves, (p.old as Row).id);
-      else if (p.new) applyUpsert(cache.leaves, dbToLeave(p.new as Row));
-      persistLocal();
-      updateSyncState({
-        status: "connected",
-        lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }),
-      });
-    })
-    .on("postgres_changes", { event: "*", schema: "public", table: "advances" }, (p) => {
-      if (p.eventType === "DELETE" && p.old) applyDelete(cache.advances, (p.old as Row).id);
-      else if (p.new) applyUpsert(cache.advances, dbToAdvance(p.new as Row));
-      persistLocal();
-      updateSyncState({
-        status: "connected",
-        lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }),
-      });
-    })
-    .on("postgres_changes", { event: "*", schema: "public", table: "salaries" }, (p) => {
-      if (p.eventType === "DELETE" && p.old) applyDelete(cache.salaries, (p.old as Row).id);
-      else if (p.new) applyUpsert(cache.salaries, dbToSalary(p.new as Row));
-      persistLocal();
-      updateSyncState({
-        status: "connected",
-        lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }),
-      });
-    })
-    .on("postgres_changes", { event: "*", schema: "public", table: "tempos" }, (p) => {
-      if (p.eventType === "DELETE" && p.old) applyDelete(cache.tempos, (p.old as Row).id);
-      else if (p.new) applyUpsert(cache.tempos, dbToTempo(p.new as Row));
-      persistLocal();
-      updateSyncState({
-        status: "connected",
-        lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }),
-      });
-    })
-    .on("postgres_changes", { event: "*", schema: "public", table: "settings" }, (p) => {
-      const row = (p.new ?? p.old) as Row | null;
-      if (row && row.key === "app_settings" && p.new) {
-        cache.settings = { ...DEFAULT_SETTINGS, ...((p.new as Row).value as AppSettings) };
+    const applyAttendanceDelete = (arr: AttendanceRecord[], id: string) => {
+      const i = arr.findIndex((x) => x.id === id);
+      if (i >= 0) arr.splice(i, 1);
+    };
+
+    const channel = sb
+      .channel("app-realtime-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, (p) => {
+        if (p.eventType === "DELETE" && p.old) applyDelete(cache.employees, (p.old as Row).id);
+        else if (p.new) applyUpsert(cache.employees, dbToEmployee(p.new as Row));
         persistLocal();
         updateSyncState({
           status: "connected",
@@ -654,57 +667,151 @@ function ensureRealtimeSubscription() {
             second: "2-digit",
           }),
         });
+        bumpData();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, (p) => {
+        if (p.eventType === "DELETE" && p.old)
+          applyAttendanceDelete(cache.attendance, (p.old as Row).id);
+        else if (p.new) applyAttendanceUpsert(cache.attendance, dbToAttendance(p.new as Row));
+        persistLocal();
+        updateSyncState({
+          status: "connected",
+          lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+        });
+        bumpData();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "leaves" }, (p) => {
+        if (p.eventType === "DELETE" && p.old) applyDelete(cache.leaves, (p.old as Row).id);
+        else if (p.new) applyUpsert(cache.leaves, dbToLeave(p.new as Row));
+        persistLocal();
+        updateSyncState({
+          status: "connected",
+          lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+        });
+        bumpData();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "advances" }, (p) => {
+        if (p.eventType === "DELETE" && p.old) applyDelete(cache.advances, (p.old as Row).id);
+        else if (p.new) applyUpsert(cache.advances, dbToAdvance(p.new as Row));
+        persistLocal();
+        updateSyncState({
+          status: "connected",
+          lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+        });
+        bumpData();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "salaries" }, (p) => {
+        if (p.eventType === "DELETE" && p.old) applyDelete(cache.salaries, (p.old as Row).id);
+        else if (p.new) applyUpsert(cache.salaries, dbToSalary(p.new as Row));
+        persistLocal();
+        updateSyncState({
+          status: "connected",
+          lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+        });
+        bumpData();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "tempos" }, (p) => {
+        if (p.eventType === "DELETE" && p.old) applyDelete(cache.tempos, (p.old as Row).id);
+        else if (p.new) applyUpsert(cache.tempos, dbToTempo(p.new as Row));
+        persistLocal();
+        updateSyncState({
+          status: "connected",
+          lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+        });
+        bumpData();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "settings" }, (p) => {
+        const row = (p.new ?? p.old) as Row | null;
+        if (row && row.key === "app_settings" && p.new) {
+          cache.settings = { ...DEFAULT_SETTINGS, ...((p.new as Row).value as AppSettings) };
+          persistLocal();
+          updateSyncState({
+            status: "connected",
+            lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            }),
+          });
+          bumpData();
+        }
+      });
+
+    realtimeChannel = channel;
+
+    channel.subscribe((status) => {
+      isRealtimeSubscribing = false;
+      if (status === "SUBSCRIBED") {
+        updateSyncState({ status: "connected" });
+      } else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        updateSyncState({ status: "offline" });
+        if (realtimeChannel === channel) {
+          try {
+            sb?.removeChannel(channel);
+          } catch {
+            /* ignore */
+          }
+          realtimeChannel = null;
+        }
+        if (typeof navigator !== "undefined" && navigator.onLine !== false) {
+          setTimeout(ensureRealtimeSubscription, 5000);
+        }
       }
     });
-
-  realtimeChannel.subscribe((status) => {
-    if (status === "SUBSCRIBED") {
-      updateSyncState({ status: "connected" });
-    } else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-      updateSyncState({ status: "offline" });
-      realtimeChannel = null;
-      // Try to re-subscribe after delay
-      setTimeout(ensureRealtimeSubscription, 3000);
-    }
-  });
+  } catch (e) {
+    console.error("[realtime-init]", e);
+    isRealtimeSubscribing = false;
+    realtimeChannel = null;
+  }
 }
 
-// Kick off on module load (browser only).
+// Kick off initial load on module load (browser only).
 if (isBrowser) {
-  void hydrate();
+  // Load data immediately on app launch
+  void waitForInitialHydration();
 
-  // Multi-device sync triggers: tab focus, visibility change, online event, and periodic polling
+  // Multi-device sync triggers: only reconnect when coming back online or after long inactivity
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") {
-      void hydrate();
+    if (document.visibilityState === "visible" && Date.now() - lastHydrateTimestamp > 300000) {
+      void hydrate(false);
     }
-  });
-  window.addEventListener("focus", () => {
-    void hydrate();
   });
   window.addEventListener("online", () => {
     updateSyncState({ status: "syncing" });
-    void hydrate();
+    void hydrate(true);
   });
   window.addEventListener("offline", () => {
     updateSyncState({ status: "offline" });
   });
-
-  // Background auto-sync every 12 seconds to guarantee live parity across all phones/PCs
-  setInterval(() => {
-    if (document.visibilityState === "visible" && navigator.onLine !== false) {
-      void hydrate();
-    }
-  }, 12000);
 }
 
 // Manual force sync (available to all components/pages)
 export async function refreshCloud(): Promise<boolean> {
-  return await hydrate();
+  return await hydrate(true);
 }
 
 export async function forceCloudSync(): Promise<{ success: boolean; lastSyncedAt: string | null }> {
-  const ok = await hydrate();
+  const ok = await hydrate(true);
   return { success: ok, lastSyncedAt: syncState.lastSyncedAt };
 }
 
@@ -718,22 +825,7 @@ function warn(where: string, err: any) {
 // ---------- durable attendance writes ----------
 // Attendance kabhi gayab na ho: har row (employee_id, attendance_date, shift)
 // unique key par upsert hoti hai, aur fail hone par queue me rakh kar retry hoti hai.
-const PENDING_KEY = "tsa_pending_attendance";
-type PendingRow = Row;
 
-function loadPending(): PendingRow[] {
-  if (!isBrowser) return [];
-  try {
-    const raw = JSON.parse(localStorage.getItem(PENDING_KEY) ?? "[]") as PendingRow[];
-    return raw.map((r) => ({
-      ...r,
-      attendance_date: normalizeDate(r.attendance_date),
-      shift: r.shift || "morning",
-    }));
-  } catch {
-    return [];
-  }
-}
 function savePending(rows: PendingRow[]) {
   saveLocal(PENDING_KEY, rows);
 }
@@ -883,7 +975,9 @@ export async function flushPendingAttendance(): Promise<number> {
 
 if (isBrowser) {
   window.addEventListener("online", () => void flushPendingAttendance());
-  setInterval(() => void flushPendingAttendance(), 30000);
+  setInterval(() => {
+    if (loadPending().length > 0) void flushPendingAttendance();
+  }, 60000);
 }
 
 // ---------- employees ----------
@@ -1019,7 +1113,7 @@ export function getAttendanceForMonth(month: string): AttendanceRecord[] {
 
 let isAutoSundayRunning = false;
 
-export function upsertAttendance(
+export async function upsertAttendance(
   rec: AttendanceRecord,
   options?: { skipSundayCheck?: boolean },
 ): Promise<boolean> {
@@ -1037,14 +1131,13 @@ export function upsertAttendance(
   } else list.unshift(rec);
   cache.attendance = list;
   saveLocal("tsa_attendance", list);
-  bump();
+  bumpData();
   const row = attendanceToDb(rec);
-  let pushPromise: Promise<boolean>;
+  let pushSuccess = true;
   if (sb) {
-    pushPromise = pushAttendanceRow(row);
+    pushSuccess = await pushAttendanceRow(row);
   } else {
     queuePending(row);
-    pushPromise = Promise.resolve(true);
   }
 
   fire("Attendance");
@@ -1081,14 +1174,14 @@ export function upsertAttendance(
     }
   }
 
-  return pushPromise;
+  return pushSuccess;
 }
 
-export function upsertBulkAttendance(
+export async function upsertBulkAttendance(
   records: AttendanceRecord[],
   options?: { skipSundayCheck?: boolean },
 ): Promise<{ success: boolean; count: number }> {
-  if (!records.length) return Promise.resolve({ success: true, count: 0 });
+  if (!records.length) return { success: true, count: 0 };
 
   const normalized = records.map((rec) => ({
     ...rec,
@@ -1118,15 +1211,15 @@ export function upsertBulkAttendance(
 
   cache.attendance = list;
   saveLocal("tsa_attendance", list);
-  bump();
+  bumpData();
   fire("Attendance");
 
-  let pushPromise: Promise<{ success: boolean; count: number }>;
+  let pushResult: { success: boolean; count: number };
   if (sb) {
-    pushPromise = pushAttendanceRowsBatch(dbRows);
+    pushResult = await pushAttendanceRowsBatch(dbRows);
   } else {
     dbRows.forEach(queuePending);
-    pushPromise = Promise.resolve({ success: true, count: records.length });
+    pushResult = { success: true, count: records.length };
   }
 
   // Automatic Sunday Rule trigger for batch
@@ -1150,7 +1243,7 @@ export function upsertBulkAttendance(
     }
   }
 
-  return pushPromise;
+  return pushResult;
 }
 export function getAttendanceForDate(date: string): AttendanceRecord[] {
   const norm = normalizeDate(date);

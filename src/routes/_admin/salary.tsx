@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -30,23 +30,18 @@ type RowWithName = SalaryRecord & { emp_name: string };
 function SalaryPage() {
   const syncVersion = useCloudSync();
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [rows, setRows] = useState<RowWithName[]>([]);
 
-  const reload = () => {
+  const rows = useMemo(() => {
+    void syncVersion;
     const emps = getEmployees();
     const empMap = new Map(emps.map((e) => [e.id, e.full_name]));
     const sal = getSalaries().filter((s) => s.month === month);
-    setRows(sal.map((s) => ({ ...s, emp_name: empMap.get(s.employee_id) ?? "Unknown" })));
-  };
-
-  useEffect(() => {
-    reload();
+    return sal.map((s) => ({ ...s, emp_name: empMap.get(s.employee_id) ?? "Unknown" }));
   }, [month, syncVersion]);
 
   const generate = () => {
     const r = generateSalaries(month);
     toast.success(`Generated ${r.length} salary records`);
-    reload();
   };
 
   const updateField = (id: string, field: "bonus" | "penalty", val: number) => {
@@ -63,7 +58,6 @@ function SalaryPage() {
         updated.penalty,
     );
     upsertSalary(updated);
-    reload();
   };
 
   const { sorted, sort, toggle } = useSortable<RowWithName>(rows, {

@@ -63,8 +63,6 @@ function stepDate(date: string, days: number) {
 function AttendancePage() {
   const syncVersion = useCloudSync();
   const [date, setDate] = useState(todayISO());
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [attRecords, setAttRecords] = useState<AttendanceRecord[]>([]);
   const [nameSearch, setNameSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
@@ -76,21 +74,17 @@ function AttendancePage() {
   const isSelectedSunday = isSunday(normalizedCurrentDate);
   const isSelectedMonday = isMonday(normalizedCurrentDate);
 
-  const reload = () => {
-    const norm = normalizeDate(date) || todayISO();
-    const allEmps = getEmployees();
-    const records = getAttendanceForDate(norm);
-    const empIdsWithRecord = new Set(records.map((r) => r.employee_id));
-    // Include all active employees PLUS any employee who has an attendance record on this date
-    const empsToShow = allEmps.filter((e) => e.active || empIdsWithRecord.has(e.id));
-    setEmployees(empsToShow);
-    setAttRecords(records);
-  };
+  const attRecords = useMemo(() => {
+    void syncVersion;
+    return getAttendanceForDate(normalizedCurrentDate);
+  }, [normalizedCurrentDate, syncVersion]);
 
-  useEffect(() => {
-    reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, syncVersion]);
+  const employees = useMemo(() => {
+    void syncVersion;
+    const allEmps = getEmployees();
+    const empIdsWithRecord = new Set(attRecords.map((r) => r.employee_id));
+    return allEmps.filter((e) => e.active || empIdsWithRecord.has(e.id));
+  }, [attRecords, syncVersion]);
 
   const attMap = useMemo(() => {
     const m = new Map<string, AttendanceRecord>();
@@ -122,7 +116,6 @@ function AttendancePage() {
       marked_by: "admin",
     } as AttendanceRecord;
     await upsertAttendance(next);
-    reload();
   };
 
   const toggleSelect = (id: string) => {
@@ -161,7 +154,6 @@ function AttendancePage() {
     setIsSaving(true);
     await upsertBulkAttendance(records);
     setIsSaving(false);
-    reload();
     toast.success(
       `⚡ Sabhi ${records.length} workers Present mark ho kar Supabase me save ho gaye!`,
     );
@@ -186,7 +178,6 @@ function AttendancePage() {
     setIsSaving(true);
     await upsertBulkAttendance(records);
     setIsSaving(false);
-    reload();
     toast.success(
       `⚡ Sabhi ${records.length} workers Absent mark ho kar Supabase me save ho gaye!`,
     );
@@ -214,7 +205,6 @@ function AttendancePage() {
     await upsertBulkAttendance(records);
     setIsSaving(false);
     setSelectedIds(new Set());
-    reload();
     toast.success(
       `⚡ Selected ${records.length} workers Present mark ho kar Supabase me save hue!`,
     );
@@ -241,7 +231,6 @@ function AttendancePage() {
     await upsertBulkAttendance(records);
     setIsSaving(false);
     setSelectedIds(new Set());
-    reload();
     toast.success(`⚡ Selected ${records.length} workers Absent mark ho kar Supabase me save hue!`);
   };
 
@@ -252,7 +241,6 @@ function AttendancePage() {
       return;
     }
     const updated = applySundayRule(norm, true);
-    reload();
     toast.success(
       `Sunday Rule update complete! (${updated} workers ka Sunday status Sat + Mon ke hisab se set hua)`,
     );

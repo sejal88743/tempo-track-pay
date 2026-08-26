@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,33 +37,27 @@ type LeaveWithName = Leave & { emp_name: string };
 
 function LeavesPage() {
   const syncVersion = useCloudSync();
-  const [leaves, setLeaves] = useState<LeaveWithName[]>([]);
   const [editing, setEditing] = useState<Partial<Leave> | null>(null);
-  const [employees, setEmployees] = useState<{ id: string; full_name: string }[]>([]);
 
-  const reload = () => {
-    const emps = getEmployees().filter((e) => e.active);
-    const empMap = new Map(emps.map((e) => [e.id, e.full_name]));
-    setEmployees(emps);
-    setLeaves(
-      getLeaves()
-        .sort((a, b) => b.from_date.localeCompare(a.from_date))
-        .map((l) => ({ ...l, emp_name: empMap.get(l.employee_id) ?? "Unknown" })),
-    );
-  };
-
-  useEffect(() => {
-    reload();
+  const employees = useMemo(() => {
+    void syncVersion;
+    return getEmployees().filter((e) => e.active);
   }, [syncVersion]);
+
+  const leaves = useMemo(() => {
+    void syncVersion;
+    const empMap = new Map(employees.map((e) => [e.id, e.full_name]));
+    return getLeaves()
+      .sort((a, b) => b.from_date.localeCompare(a.from_date))
+      .map((l) => ({ ...l, emp_name: empMap.get(l.employee_id) ?? "Unknown" }));
+  }, [employees, syncVersion]);
 
   const approve = (l: Leave) => {
     upsertLeave({ ...l, status: "approved" });
-    reload();
     toast.success("Approved");
   };
   const reject = (l: Leave) => {
     upsertLeave({ ...l, status: "rejected" });
-    reload();
     toast.success("Rejected");
   };
 
@@ -83,7 +77,6 @@ function LeavesPage() {
     });
     toast.success("Saved");
     setEditing(null);
-    reload();
   };
 
   return (

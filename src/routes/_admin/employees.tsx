@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect, useRef } from "react";
+import { useState, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -87,7 +87,10 @@ async function parseMdbEmployees(
 
 function EmployeesPage() {
   const syncVersion = useCloudSync();
-  const [emps, setEmps] = useState<Employee[]>([]);
+  const emps = useMemo(() => {
+    void syncVersion;
+    return getEmployees();
+  }, [syncVersion]);
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<Partial<Employee> | null>(null);
   const [faceEmp, setFaceEmp] = useState<Employee | null>(null);
@@ -97,11 +100,6 @@ function EmployeesPage() {
     { name: string; active: boolean; skip: boolean }[] | null
   >(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const reload = () => setEmps(getEmployees());
-  useEffect(() => {
-    reload();
-  }, [syncVersion]);
 
   const filtered = emps.filter(
     (e) =>
@@ -141,17 +139,13 @@ function EmployeesPage() {
     });
     toast.success("Employee save ho gaya!");
     setEditing(null);
-    reload();
   };
 
   const confirmDelete = async (emp: Employee) => {
     try {
       deleteEmployee(emp.id);
-      // Immediately filter out from local state
-      setEmps((prev) => prev.filter((e) => e.id !== emp.id));
       toast.success(`${emp.full_name} ko successfully remove/delete kar diya gaya.`);
       setDeletingEmp(null);
-      reload();
     } catch (err) {
       toast.error("Delete karne mein error aaya: " + (err as Error).message);
     }
@@ -196,7 +190,6 @@ function EmployeesPage() {
     });
     toast.success(`✅ ${count} employees import ho gaye! Role & salary manually set karein.`);
     setMdbPreview(null);
-    reload();
   };
 
   return (

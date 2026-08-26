@@ -1435,9 +1435,18 @@ const MONTH_NAMES = [
 
 function YearlyAttendanceReport({ year, onSelectMonth }: YearlyAttendanceReportProps) {
   const syncVersion = useCloudSync();
-  const emps = useMemo(() => getEmployees().filter((e) => e.active), [syncVersion]);
-  const attendance = useMemo(() => getAttendance(), [syncVersion]);
-  const leaves = useMemo(() => getLeaves().filter((l) => l.status === "approved"), [syncVersion]);
+  const emps = useMemo(() => {
+    void syncVersion;
+    return getEmployees().filter((e) => e.active);
+  }, [syncVersion]);
+  const attendance = useMemo(() => {
+    void syncVersion;
+    return getAttendance();
+  }, [syncVersion]);
+  const leaves = useMemo(() => {
+    void syncVersion;
+    return getLeaves().filter((l) => l.status === "approved");
+  }, [syncVersion]);
 
   // Compute 12-month data for each worker in the selected year
   const yearlyData = useMemo(() => {
@@ -1808,7 +1817,6 @@ function YearlyAttendanceReport({ year, onSelectMonth }: YearlyAttendanceReportP
 
 // ── Main Page ──────────────────────────────────────────────────────────────
 function ReportsPage() {
-  useCloudSync();
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
   const currentYear = String(now.getFullYear());

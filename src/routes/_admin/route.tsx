@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { isAdminLoggedIn, useCloudSync, getSyncStatus, forceCloudSync } from "@/lib/store";
+import { isAdminLoggedIn, useCloudSync, useSyncStatus, forceCloudSync } from "@/lib/store";
 import {
   LayoutDashboard,
   Users,
@@ -37,17 +37,19 @@ const NAV = [
 ] as const;
 
 function AdminLayout() {
-  const syncVersion = useCloudSync(); // re-render on realtime / local mutations from any tab or device
   const loc = useLocation();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isManualSyncing, setIsManualSyncing] = useState(false);
-  const syncInfo = getSyncStatus();
+  const syncInfo = useSyncStatus();
 
   // Client-side auth guard — avoids SSR/client hydration mismatch
   useEffect(() => {
-    if (!isAdminLoggedIn()) navigate({ to: "/login" });
-  }, [navigate]);
+    if (!isAdminLoggedIn()) {
+      navigate({ to: "/login" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSyncNow = async () => {
     setIsManualSyncing(true);

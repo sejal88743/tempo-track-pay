@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -21,7 +21,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { getEmployees, getTempos, type Employee, type Tempo } from "@/lib/store";
+import { getEmployees, getTempos, useCloudSync, type Employee, type Tempo } from "@/lib/store";
 
 type Assignment = { id: string; employee_id: string; tempo_id: string; date: string; role: string };
 const STORE_KEY = "tsa_assignments";
@@ -40,6 +40,7 @@ function saveAssignments(a: Assignment[]) {
 export const Route = createFileRoute("/_admin/assignments")({ component: AssignmentsPage });
 
 function AssignmentsPage() {
+  const syncVersion = useCloudSync();
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -48,15 +49,15 @@ function AssignmentsPage() {
   const [tempoId, setTempoId] = useState("");
   const [role, setRole] = useState("Driver");
 
-  const reload = () => {
+  const reload = useCallback(() => {
     setEmployees(getEmployees().filter((e) => e.active));
     setTempos(getTempos().filter((t) => t.active));
     setAssignments(getAssignments().filter((a) => a.date === date));
-  };
+  }, [date]);
 
   useEffect(() => {
     reload();
-  }, [date]);
+  }, [reload, syncVersion]);
 
   const add = () => {
     if (!empId || !tempoId) {

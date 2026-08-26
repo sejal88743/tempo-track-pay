@@ -20,6 +20,7 @@ function LoginPage() {
   // Redirect already-logged-in admins — useEffect avoids SSR/client hydration mismatch
   useEffect(() => {
     if (isAdminLoggedIn()) navigate({ to: "/dashboard" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [pw, setPw] = useState("");
   const [loading, setLoading] = useState(false);

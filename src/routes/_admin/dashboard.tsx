@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import {
   Users,
@@ -54,16 +54,9 @@ function Stat({
 
 function Dashboard() {
   const syncVersion = useCloudSync();
-  const [counts, setCounts] = useState({
-    total: 0,
-    biometricEnrolled: 0,
-    present: 0,
-    absent: 0,
-    pendingAdv: 0,
-    pendingLeaves: 0,
-  });
 
-  useEffect(() => {
+  const counts = useMemo(() => {
+    void syncVersion;
     const emps = getEmployees().filter((e) => e.active);
     const today = todayString();
     const todayAtt = getAttendance().filter((r) => normalizeDate(r.date) === today);
@@ -80,14 +73,14 @@ function Dashboard() {
     const pendingAdv = getAdvances().filter((a) => a.status === "pending").length;
     const pendingLeaves = getLeaves().filter((l) => l.status === "pending").length;
     const biometricEnrolled = emps.filter((e) => e.biometric_enrolled).length;
-    setCounts({
+    return {
       total: emps.length,
       biometricEnrolled,
       present,
       absent,
       pendingAdv,
       pendingLeaves,
-    });
+    };
   }, [syncVersion]);
 
   return (

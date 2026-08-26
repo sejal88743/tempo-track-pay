@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,33 +45,27 @@ type AdvWithName = Advance & { emp_name: string };
 
 function AdvancesPage() {
   const syncVersion = useCloudSync();
-  const [advances, setAdvances] = useState<AdvWithName[]>([]);
   const [editing, setEditing] = useState<Partial<Advance> | null>(null);
-  const [employees, setEmployees] = useState<{ id: string; full_name: string }[]>([]);
 
-  const reload = () => {
-    const emps = getEmployees().filter((e) => e.active);
-    const empMap = new Map(emps.map((e) => [e.id, e.full_name]));
-    setEmployees(emps);
-    setAdvances(
-      getAdvances()
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .map((a) => ({ ...a, emp_name: empMap.get(a.employee_id) ?? "Unknown" })),
-    );
-  };
-
-  useEffect(() => {
-    reload();
+  const employees = useMemo(() => {
+    void syncVersion;
+    return getEmployees().filter((e) => e.active);
   }, [syncVersion]);
+
+  const advances = useMemo(() => {
+    void syncVersion;
+    const empMap = new Map(employees.map((e) => [e.id, e.full_name]));
+    return getAdvances()
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map((a) => ({ ...a, emp_name: empMap.get(a.employee_id) ?? "Unknown" }));
+  }, [employees, syncVersion]);
 
   const approve = (a: Advance) => {
     upsertAdvance({ ...a, status: "approved" });
-    reload();
     toast.success("Approved");
   };
   const reject = (a: Advance) => {
     upsertAdvance({ ...a, status: "rejected" });
-    reload();
     toast.success("Rejected");
   };
 
@@ -95,7 +89,6 @@ function AdvancesPage() {
     });
     toast.success("Saved");
     setEditing(null);
-    reload();
   };
 
   const { sorted, sort, toggle } = useSortable<AdvWithName>(advances, {
