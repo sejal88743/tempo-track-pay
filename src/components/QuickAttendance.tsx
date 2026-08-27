@@ -24,8 +24,8 @@ export function QuickAttendance({
   const [showCam, setShowCam] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const markFor = (emp: Employee, method: "fingerprint" | "face") => {
-    upsertAttendance({
+  const markFor = async (emp: Employee, method: "fingerprint" | "face") => {
+    await upsertAttendance({
       id: newId(),
       employee_id: emp.id,
       date,

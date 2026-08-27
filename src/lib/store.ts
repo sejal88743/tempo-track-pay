@@ -31,6 +31,7 @@ export const ALL_ROLES: Role[] = [
 
 export type Employee = {
   id: string;
+  employee_code?: string;
   full_name: string;
   role: Role;
   extra_roles?: Role[];
@@ -206,15 +207,32 @@ export function getSyncStatus(): SyncState {
 
 let dataVersion = 0;
 const dataListeners = new Set<() => void>();
+let isBumpingData = false;
+let hasPendingDataBump = false;
+
 function bumpData() {
   dataVersion++;
-  dataListeners.forEach((l) => {
-    try {
-      l();
-    } catch {
-      /* ignore */
+  if (isBumpingData) {
+    hasPendingDataBump = true;
+    return;
+  }
+  isBumpingData = true;
+  try {
+    const listeners = Array.from(dataListeners);
+    for (const l of listeners) {
+      try {
+        l();
+      } catch {
+        /* ignore */
+      }
     }
-  });
+  } finally {
+    isBumpingData = false;
+    if (hasPendingDataBump) {
+      hasPendingDataBump = false;
+      bumpData();
+    }
+  }
 }
 
 // Backward-compatible alias
@@ -222,15 +240,32 @@ const bump = bumpData;
 
 let syncStatusVersion = 0;
 const syncStatusListeners = new Set<() => void>();
+let isBumpingSync = false;
+let hasPendingSyncBump = false;
+
 function bumpSyncStatus() {
   syncStatusVersion++;
-  syncStatusListeners.forEach((l) => {
-    try {
-      l();
-    } catch {
-      /* ignore */
+  if (isBumpingSync) {
+    hasPendingSyncBump = true;
+    return;
+  }
+  isBumpingSync = true;
+  try {
+    const listeners = Array.from(syncStatusListeners);
+    for (const l of listeners) {
+      try {
+        l();
+      } catch {
+        /* ignore */
+      }
     }
-  });
+  } finally {
+    isBumpingSync = false;
+    if (hasPendingSyncBump) {
+      hasPendingSyncBump = false;
+      bumpSyncStatus();
+    }
+  }
 }
 
 function updateSyncState(patch: Partial<SyncState>) {
@@ -289,6 +324,7 @@ function dbToEmployee(r: Row): Employee {
   const credIds = (Array.isArray(r.credential_ids) ? r.credential_ids : []) as string[];
   return {
     id: r.id,
+    employee_code: r.employee_code || undefined,
     full_name: r.full_name,
     role: primary,
     extra_roles: extras.length ? extras : undefined,
@@ -306,7 +342,7 @@ function employeeToDb(e: Employee): Row {
   const rolesArr = [e.role, ...(e.extra_roles ?? [])];
   return {
     id: e.id,
-    employee_code: e.id.slice(0, 8).toUpperCase(),
+    employee_code: e.employee_code || e.id.slice(0, 8).toUpperCase(),
     full_name: e.full_name,
     mobile_number: e.mobile || null,
     joining_date: e.joining_date,
@@ -476,12 +512,27 @@ export async function hydrate(force = false): Promise<boolean> {
       sb.from("settings").select("*").eq("key", "app_settings").maybeSingle(),
     ]);
 
-    if (emp.data) cache.employees = emp.data.map(dbToEmployee);
+    if (emp.error) {
+      warn("employees.hydrate", emp.error);
+    } else if (emp.data) {
+      cache.employees = emp.data.map(dbToEmployee);
+    }
 
-    const attMap = new Map<string, AttendanceRecord>();
+    if (att.error) {
+      warn("attendance.hydrate", att.error);
+    } else if (att.data) {
+      const attMap = new Map<string, AttendanceRecord>();
 
-    // 1. Cloud data is the primary authoritative source of truth across all devices
-    if (att.data) {
+      // 1. First keep all current in-memory / local cached attendance
+      for (const localRec of cache.attendance) {
+        if (!localRec || !localRec.employee_id || !localRec.date) continue;
+        const normDate = normalizeDate(localRec.date);
+        const shift = localRec.shift || "morning";
+        const key = `${localRec.employee_id}_${normDate}_${shift}`;
+        attMap.set(key, { ...localRec, date: normDate, shift });
+      }
+
+      // 2. Cloud data overlays authoritative records
       const cloudList = att.data.map(dbToAttendance);
       for (const c of cloudList) {
         const normDate = normalizeDate(c.date);
@@ -489,25 +540,36 @@ export async function hydrate(force = false): Promise<boolean> {
         const key = `${c.employee_id}_${normDate}_${shift}`;
         attMap.set(key, { ...c, date: normDate, shift });
       }
+
+      // 3. Pending un-synced offline writes overlay on top with highest priority
+      const pendingRows = loadPending();
+      for (const p of pendingRows) {
+        const normDate = normalizeDate(p.attendance_date);
+        const shift = p.shift || "morning";
+        const key = `${p.employee_id}_${normDate}_${shift}`;
+        const pendingRecord = dbToAttendance({ ...p, attendance_date: normDate, shift });
+        attMap.set(key, pendingRecord);
+      }
+
+      cache.attendance = Array.from(attMap.values()).sort((a, b) => a.date.localeCompare(b.date));
     }
 
-    // 2. Overlay any genuinely un-synced offline writes waiting in pending queue
-    const pendingRows = loadPending();
-    for (const p of pendingRows) {
-      const normDate = normalizeDate(p.attendance_date);
-      const shift = p.shift || "morning";
-      const key = `${p.employee_id}_${normDate}_${shift}`;
-      const pendingRecord = dbToAttendance({ ...p, attendance_date: normDate, shift });
-      attMap.set(key, pendingRecord);
+    if (lv.error) warn("leaves.hydrate", lv.error);
+    else if (lv.data) cache.leaves = lv.data.map(dbToLeave);
+
+    if (adv.error) warn("advances.hydrate", adv.error);
+    else if (adv.data) cache.advances = adv.data.map(dbToAdvance);
+
+    if (sal.error) warn("salaries.hydrate", sal.error);
+    else if (sal.data) cache.salaries = sal.data.map(dbToSalary);
+
+    if (tmp.error) warn("tempos.hydrate", tmp.error);
+    else if (tmp.data) cache.tempos = tmp.data.map(dbToTempo);
+
+    if (st.error) warn("settings.hydrate", st.error);
+    else if (st.data?.value) {
+      cache.settings = { ...DEFAULT_SETTINGS, ...(st.data.value as AppSettings) };
     }
-
-    cache.attendance = Array.from(attMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-
-    if (lv.data) cache.leaves = lv.data.map(dbToLeave);
-    if (adv.data) cache.advances = adv.data.map(dbToAdvance);
-    if (sal.data) cache.salaries = sal.data.map(dbToSalary);
-    if (tmp.data) cache.tempos = tmp.data.map(dbToTempo);
-    if (st.data?.value) cache.settings = { ...DEFAULT_SETTINGS, ...(st.data.value as AppSettings) };
 
     lastHydrateTimestamp = Date.now();
     persistLocal();
@@ -763,14 +825,25 @@ export async function refreshCloud(): Promise<boolean> {
 
 export async function forceCloudSync(): Promise<{ success: boolean; lastSyncedAt: string | null }> {
   const ok = await hydrate(true);
-  return { success: ok, lastSyncedAt: syncState.lastSyncedAt };
+  return { success: ok, lastSyncedAt: currentSyncSnapshot.lastSyncedAt };
 }
 
 // ---------- write helpers (fire-and-forget with local optimistic update) ----------
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function warn(where: string, err: any) {
-  console.error(`[cloud-write] ${where}`, err?.message ?? err);
+  const msg = err?.message || err?.details || err?.hint || String(err);
+  if (
+    msg.includes("Failed to fetch") ||
+    msg.includes("NetworkError") ||
+    msg.includes("network") ||
+    msg.includes("FetchError")
+  ) {
+    updateSyncState({ status: "offline", errorMessage: "Offline: saved locally" });
+    return;
+  }
+  console.error(`[cloud-write error] ${where}:`, err);
+  updateSyncState({ status: "error", errorMessage: `Supabase write failed (${where}): ${msg}` });
 }
 
 // ---------- durable attendance writes ----------
@@ -811,7 +884,7 @@ function dequeuePending(row: PendingRow) {
 
 async function pushAttendanceRow(row: PendingRow): Promise<boolean> {
   if (!sb) return false;
-  // id ko conflict target se hataayein — dusre device par bani row ka id alag ho sakta hai.
+  queuePending(row);
   const { id: _id, ...payload } = row;
   const { data, error } = await sb
     .from("attendance")
@@ -820,10 +893,14 @@ async function pushAttendanceRow(row: PendingRow): Promise<boolean> {
     .maybeSingle();
   if (error) {
     warn("attendance.upsert", error);
-    queuePending(row);
     return false;
   }
   dequeuePending(row);
+  updateSyncState({
+    status: "connected",
+    lastSyncedAt: new Date().toISOString(),
+    errorMessage: undefined,
+  });
   if (data) {
     const saved = dbToAttendance(data as Row);
     const list = [...cache.attendance];
@@ -837,7 +914,7 @@ async function pushAttendanceRow(row: PendingRow): Promise<boolean> {
     else list.unshift(saved);
     cache.attendance = list;
     saveLocal("tsa_attendance", list);
-    bump();
+    bumpData();
   }
   return true;
 }
@@ -868,6 +945,9 @@ export async function pushAttendanceRowsBatch(
   const dedupedRows = Array.from(dedupMap.values());
   if (dedupedRows.length === 0) return { success: true, count: 0 };
 
+  // Queue into pending offline queue immediately
+  dedupedRows.forEach(queuePending);
+
   const payloads = dedupedRows.map((r) => {
     const { id: _id, ...p } = r;
     return p;
@@ -886,7 +966,6 @@ export async function pushAttendanceRowsBatch(
 
     if (error) {
       warn("attendance.batchUpsert", error);
-      chunkRows.forEach(queuePending);
     } else {
       chunkRows.forEach(dequeuePending);
       if (data && Array.isArray(data)) {
@@ -909,7 +988,14 @@ export async function pushAttendanceRowsBatch(
     }
   }
 
-  bump();
+  if (savedCount > 0) {
+    updateSyncState({
+      status: "connected",
+      lastSyncedAt: new Date().toISOString(),
+      errorMessage: undefined,
+    });
+  }
+  bumpData();
   fire("Attendance");
   return { success: savedCount > 0 || dedupedRows.length === 0, count: savedCount };
 }
@@ -934,27 +1020,54 @@ if (isBrowser) {
 export function getEmployees(): Employee[] {
   return cache.employees;
 }
-export function saveEmployees(list: Employee[]) {
+export async function saveEmployees(list: Employee[]): Promise<boolean> {
   cache.employees = list;
   saveLocal("tsa_employees", list);
-  bump();
+  bumpData();
+  let ok = true;
+  if (sb && list.length > 0) {
+    const rows = list.map(employeeToDb);
+    const { error } = await sb.from("employees").upsert(rows, { onConflict: "id" });
+    if (error) {
+      warn("employees.save", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
   fire("Employees");
+  return ok;
 }
-export function upsertEmployee(emp: Employee) {
+export async function upsertEmployee(emp: Employee): Promise<boolean> {
   const list = [...cache.employees];
   const idx = list.findIndex((e) => e.id === emp.id);
   if (idx >= 0) list[idx] = emp;
   else list.unshift(emp);
   cache.employees = list;
   saveLocal("tsa_employees", list);
-  bump();
-  if (sb)
-    sb.from("employees")
-      .upsert(employeeToDb(emp))
-      .then(({ error }) => error && warn("employee.upsert", error));
+  bumpData();
+  let ok = true;
+  if (sb) {
+    const { error } = await sb.from("employees").upsert(employeeToDb(emp), { onConflict: "id" });
+    if (error) {
+      warn("employee.upsert", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
   fire("Employees");
+  return ok;
 }
-export function deleteEmployee(id: string) {
+export async function deleteEmployee(id: string): Promise<boolean> {
   cache.employees = cache.employees.filter((e) => e.id !== id);
   // Also clean up local dependent records so they don't hold references
   cache.attendance = cache.attendance.filter((a) => a.employee_id !== id);
@@ -968,19 +1081,23 @@ export function deleteEmployee(id: string) {
   saveLocal("tsa_advances", cache.advances);
   saveLocal("tsa_salaries", cache.salaries);
 
-  bump();
+  bumpData();
+  let ok = true;
   if (sb) {
-    // Delete in Supabase (foreign keys ON DELETE CASCADE will clean related tables)
-    sb.from("employees")
-      .delete()
-      .eq("id", id)
-      .then(({ error }) => {
-        if (error) {
-          warn("employee.delete", error);
-        }
+    const { error } = await sb.from("employees").delete().eq("id", id);
+    if (error) {
+      warn("employee.delete", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
       });
+    }
   }
   fire("Employees");
+  return ok;
 }
 
 // ---------- attendance ----------
@@ -1047,12 +1164,18 @@ export function normalizeDate(d: string | number | Date | null | undefined): str
 export function getAttendance(): AttendanceRecord[] {
   return cache.attendance;
 }
-export function saveAttendance(list: AttendanceRecord[]) {
+export async function saveAttendance(list: AttendanceRecord[]): Promise<boolean> {
   cache.attendance = list.map((r) => ({ ...r, date: normalizeDate(r.date) }));
   saveLocal("tsa_attendance", cache.attendance);
   saveLocal("tsa_attendance_backup", cache.attendance);
-  bump();
+  bumpData();
   fire("Attendance");
+  if (sb && list.length > 0) {
+    const dbRows = list.map(attendanceToDb);
+    const res = await pushAttendanceRowsBatch(dbRows);
+    return res.success;
+  }
+  return true;
 }
 
 export function getAttendanceForMonth(month: string): AttendanceRecord[] {
@@ -1199,30 +1322,100 @@ export function getAttendanceForDate(date: string): AttendanceRecord[] {
   return cache.attendance.filter((r) => normalizeDate(r.date) === norm);
 }
 
+export async function deleteAttendance(id: string): Promise<boolean> {
+  cache.attendance = cache.attendance.filter((a) => a.id !== id);
+  saveLocal("tsa_attendance", cache.attendance);
+  bumpData();
+  let ok = true;
+  if (sb) {
+    const { error } = await sb.from("attendance").delete().eq("id", id);
+    if (error) {
+      warn("attendance.delete", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
+  fire("Attendance");
+  return ok;
+}
+
 // ---------- leaves ----------
 
 export function getLeaves(): Leave[] {
   return cache.leaves;
 }
-export function saveLeaves(list: Leave[]) {
+export async function saveLeaves(list: Leave[]): Promise<boolean> {
   cache.leaves = list;
   saveLocal("tsa_leaves", list);
-  bump();
+  bumpData();
+  let ok = true;
+  if (sb && list.length > 0) {
+    const rows = list.map(leaveToDb);
+    const { error } = await sb.from("leaves").upsert(rows, { onConflict: "id" });
+    if (error) {
+      warn("leaves.save", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
   fire("Leaves");
+  return ok;
 }
-export function upsertLeave(l: Leave) {
+export async function upsertLeave(l: Leave): Promise<boolean> {
   const list = [...cache.leaves];
   const i = list.findIndex((r) => r.id === l.id);
   if (i >= 0) list[i] = l;
   else list.unshift(l);
   cache.leaves = list;
   saveLocal("tsa_leaves", list);
-  bump();
-  if (sb)
-    sb.from("leaves")
-      .upsert(leaveToDb(l))
-      .then(({ error }) => error && warn("leave.upsert", error));
+  bumpData();
+  let ok = true;
+  if (sb) {
+    const { error } = await sb.from("leaves").upsert(leaveToDb(l), { onConflict: "id" });
+    if (error) {
+      warn("leave.upsert", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
   fire("Leaves");
+  return ok;
+}
+export async function deleteLeave(id: string): Promise<boolean> {
+  cache.leaves = cache.leaves.filter((l) => l.id !== id);
+  saveLocal("tsa_leaves", cache.leaves);
+  bumpData();
+  let ok = true;
+  if (sb) {
+    const { error } = await sb.from("leaves").delete().eq("id", id);
+    if (error) {
+      warn("leave.delete", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
+  fire("Leaves");
+  return ok;
 }
 
 // ---------- advances ----------
@@ -1230,25 +1423,73 @@ export function upsertLeave(l: Leave) {
 export function getAdvances(): Advance[] {
   return cache.advances;
 }
-export function saveAdvances(list: Advance[]) {
+export async function saveAdvances(list: Advance[]): Promise<boolean> {
   cache.advances = list;
   saveLocal("tsa_advances", list);
-  bump();
+  bumpData();
+  let ok = true;
+  if (sb && list.length > 0) {
+    const rows = list.map(advanceToDb);
+    const { error } = await sb.from("advances").upsert(rows, { onConflict: "id" });
+    if (error) {
+      warn("advances.save", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
   fire("Advances");
+  return ok;
 }
-export function upsertAdvance(a: Advance) {
+export async function upsertAdvance(a: Advance): Promise<boolean> {
   const list = [...cache.advances];
   const i = list.findIndex((r) => r.id === a.id);
   if (i >= 0) list[i] = a;
   else list.unshift(a);
   cache.advances = list;
   saveLocal("tsa_advances", list);
-  bump();
-  if (sb)
-    sb.from("advances")
-      .upsert(advanceToDb(a))
-      .then(({ error }) => error && warn("advance.upsert", error));
+  bumpData();
+  let ok = true;
+  if (sb) {
+    const { error } = await sb.from("advances").upsert(advanceToDb(a), { onConflict: "id" });
+    if (error) {
+      warn("advance.upsert", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
   fire("Advances");
+  return ok;
+}
+export async function deleteAdvance(id: string): Promise<boolean> {
+  cache.advances = cache.advances.filter((a) => a.id !== id);
+  saveLocal("tsa_advances", cache.advances);
+  bumpData();
+  let ok = true;
+  if (sb) {
+    const { error } = await sb.from("advances").delete().eq("id", id);
+    if (error) {
+      warn("advance.delete", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
+  fire("Advances");
+  return ok;
 }
 
 // ---------- salaries ----------
@@ -1256,25 +1497,75 @@ export function upsertAdvance(a: Advance) {
 export function getSalaries(): SalaryRecord[] {
   return cache.salaries;
 }
-export function saveSalaries(list: SalaryRecord[]) {
+export async function saveSalaries(list: SalaryRecord[]): Promise<boolean> {
   cache.salaries = list;
   saveLocal("tsa_salaries", list);
-  bump();
+  bumpData();
+  let ok = true;
+  if (sb && list.length > 0) {
+    const rows = list.map(salaryToDb);
+    const { error } = await sb.from("salaries").upsert(rows, { onConflict: "employee_id,month" });
+    if (error) {
+      warn("salaries.save", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
   fire("Salary");
+  return ok;
 }
-export function upsertSalary(s: SalaryRecord) {
+export async function upsertSalary(s: SalaryRecord): Promise<boolean> {
   const list = [...cache.salaries];
   const i = list.findIndex((r) => r.id === s.id);
   if (i >= 0) list[i] = s;
   else list.unshift(s);
   cache.salaries = list;
   saveLocal("tsa_salaries", list);
-  bump();
-  if (sb)
-    sb.from("salaries")
-      .upsert(salaryToDb(s))
-      .then(({ error }) => error && warn("salary.upsert", error));
+  bumpData();
+  let ok = true;
+  if (sb) {
+    const { error } = await sb
+      .from("salaries")
+      .upsert(salaryToDb(s), { onConflict: "employee_id,month" });
+    if (error) {
+      warn("salary.upsert", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
   fire("Salary");
+  return ok;
+}
+export async function deleteSalary(id: string): Promise<boolean> {
+  cache.salaries = cache.salaries.filter((s) => s.id !== id);
+  saveLocal("tsa_salaries", cache.salaries);
+  bumpData();
+  let ok = true;
+  if (sb) {
+    const { error } = await sb.from("salaries").delete().eq("id", id);
+    if (error) {
+      warn("salary.delete", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
+  fire("Salary");
+  return ok;
 }
 
 // ---------- tempos ----------
@@ -1282,25 +1573,73 @@ export function upsertSalary(s: SalaryRecord) {
 export function getTempos(): Tempo[] {
   return cache.tempos;
 }
-export function saveTempos(list: Tempo[]) {
+export async function saveTempos(list: Tempo[]): Promise<boolean> {
   cache.tempos = list;
   saveLocal("tsa_tempos", list);
-  bump();
+  bumpData();
+  let ok = true;
+  if (sb && list.length > 0) {
+    const rows = list.map(tempoToDb);
+    const { error } = await sb.from("tempos").upsert(rows, { onConflict: "id" });
+    if (error) {
+      warn("tempos.save", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
   fire("Tempos");
+  return ok;
 }
-export function upsertTempo(t: Tempo) {
+export async function upsertTempo(t: Tempo): Promise<boolean> {
   const list = [...cache.tempos];
   const i = list.findIndex((r) => r.id === t.id);
   if (i >= 0) list[i] = t;
   else list.unshift(t);
   cache.tempos = list;
   saveLocal("tsa_tempos", list);
-  bump();
-  if (sb)
-    sb.from("tempos")
-      .upsert(tempoToDb(t))
-      .then(({ error }) => error && warn("tempo.upsert", error));
+  bumpData();
+  let ok = true;
+  if (sb) {
+    const { error } = await sb.from("tempos").upsert(tempoToDb(t), { onConflict: "id" });
+    if (error) {
+      warn("tempo.upsert", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
   fire("Tempos");
+  return ok;
+}
+export async function deleteTempo(id: string): Promise<boolean> {
+  cache.tempos = cache.tempos.filter((t) => t.id !== id);
+  saveLocal("tsa_tempos", cache.tempos);
+  bumpData();
+  let ok = true;
+  if (sb) {
+    const { error } = await sb.from("tempos").delete().eq("id", id);
+    if (error) {
+      warn("tempo.delete", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
+  fire("Tempos");
+  return ok;
 }
 
 // ---------- settings ----------
@@ -1308,17 +1647,30 @@ export function upsertTempo(t: Tempo) {
 export function getSettings(): AppSettings {
   return cache.settings;
 }
-export function saveSettings(s: AppSettings) {
+export async function saveSettings(s: AppSettings): Promise<boolean> {
   cache.settings = s;
   saveLocal("tsa_settings", s);
-  bump();
-  if (sb)
-    sb.from("settings")
-      .upsert({ key: "app_settings", value: s })
-      .then(({ error }) => error && warn("settings.upsert", error));
+  bumpData();
+  let ok = true;
+  if (sb) {
+    const { error } = await sb
+      .from("settings")
+      .upsert({ key: "app_settings", value: s }, { onConflict: "key" });
+    if (error) {
+      warn("settings.upsert", error);
+      ok = false;
+    } else {
+      updateSyncState({
+        status: "connected",
+        lastSyncedAt: new Date().toISOString(),
+        errorMessage: undefined,
+      });
+    }
+  }
+  return ok;
 }
 export function updateSettings(patch: Partial<AppSettings>) {
-  saveSettings({ ...cache.settings, ...patch });
+  return saveSettings({ ...cache.settings, ...patch });
 }
 
 // ---------- admin session (still local — this is per-device auth token) ----------

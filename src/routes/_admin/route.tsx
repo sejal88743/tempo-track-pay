@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { isAdminLoggedIn, useCloudSync, useSyncStatus, forceCloudSync } from "@/lib/store";
+import { isAdminLoggedIn, useSyncStatus, forceCloudSync } from "@/lib/store";
 import {
   LayoutDashboard,
   Users,
@@ -41,7 +41,16 @@ function AdminLayout() {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isManualSyncing, setIsManualSyncing] = useState(false);
-  const syncInfo = useSyncStatus();
+  const rawSyncInfo = useSyncStatus();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const syncInfo = mounted
+    ? rawSyncInfo
+    : { status: "syncing" as const, lastSyncedAt: null, pendingCount: 0 };
 
   // Client-side auth guard — avoids SSR/client hydration mismatch
   useEffect(() => {

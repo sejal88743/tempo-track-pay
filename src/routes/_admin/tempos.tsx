@@ -23,7 +23,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Pencil, Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { getTempos, upsertTempo, saveTempos, newId, type Tempo } from "@/lib/store";
+import { getTempos, upsertTempo, deleteTempo, newId, type Tempo } from "@/lib/store";
 
 export const Route = createFileRoute("/_admin/tempos")({ component: TemposPage });
 
@@ -36,12 +36,12 @@ function TemposPage() {
     reload();
   }, []);
 
-  const save = () => {
+  const save = async () => {
     if (!editing?.vehicle_number?.trim()) {
       toast.error("Vehicle number enter karein");
       return;
     }
-    upsertTempo({
+    await upsertTempo({
       id: editing.id ?? newId(),
       vehicle_number: editing.vehicle_number.trim(),
       active: editing.active ?? true,
@@ -51,9 +51,10 @@ function TemposPage() {
     reload();
   };
 
-  const remove = (id: string) => {
+  const remove = async (id: string) => {
     if (!confirm("Delete tempo?")) return;
-    saveTempos(getTempos().filter((t) => t.id !== id));
+    await deleteTempo(id);
+    toast.success("Tempo deleted");
     reload();
   };
 

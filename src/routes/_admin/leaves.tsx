@@ -52,21 +52,21 @@ function LeavesPage() {
       .map((l) => ({ ...l, emp_name: empMap.get(l.employee_id) ?? "Unknown" }));
   }, [employees, syncVersion]);
 
-  const approve = (l: Leave) => {
-    upsertLeave({ ...l, status: "approved" });
+  const approve = async (l: Leave) => {
+    await upsertLeave({ ...l, status: "approved" });
     toast.success("Approved");
   };
-  const reject = (l: Leave) => {
-    upsertLeave({ ...l, status: "rejected" });
+  const reject = async (l: Leave) => {
+    await upsertLeave({ ...l, status: "rejected" });
     toast.success("Rejected");
   };
 
-  const save = () => {
+  const save = async () => {
     if (!editing?.employee_id) {
       toast.error("Employee select karein");
       return;
     }
-    upsertLeave({
+    await upsertLeave({
       id: editing.id ?? newId(),
       employee_id: editing.employee_id!,
       type: editing.type ?? "casual",

@@ -60,16 +60,16 @@ function AdvancesPage() {
       .map((a) => ({ ...a, emp_name: empMap.get(a.employee_id) ?? "Unknown" }));
   }, [employees, syncVersion]);
 
-  const approve = (a: Advance) => {
-    upsertAdvance({ ...a, status: "approved" });
+  const approve = async (a: Advance) => {
+    await upsertAdvance({ ...a, status: "approved" });
     toast.success("Approved");
   };
-  const reject = (a: Advance) => {
-    upsertAdvance({ ...a, status: "rejected" });
+  const reject = async (a: Advance) => {
+    await upsertAdvance({ ...a, status: "rejected" });
     toast.success("Rejected");
   };
 
-  const save = () => {
+  const save = async () => {
     if (!editing?.employee_id) {
       toast.error("Employee select karein");
       return;
@@ -78,7 +78,7 @@ function AdvancesPage() {
       toast.error("Amount enter karein");
       return;
     }
-    upsertAdvance({
+    await upsertAdvance({
       id: editing.id ?? newId(),
       employee_id: editing.employee_id!,
       amount: Number(editing.amount),

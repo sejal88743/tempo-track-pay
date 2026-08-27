@@ -39,12 +39,12 @@ function SalaryPage() {
     return sal.map((s) => ({ ...s, emp_name: empMap.get(s.employee_id) ?? "Unknown" }));
   }, [month, syncVersion]);
 
-  const generate = () => {
-    const r = generateSalaries(month);
+  const generate = async () => {
+    const r = await generateSalaries(month);
     toast.success(`Generated ${r.length} salary records`);
   };
 
-  const updateField = (id: string, field: "bonus" | "penalty", val: number) => {
+  const updateField = async (id: string, field: "bonus" | "penalty", val: number) => {
     const row = rows.find((r) => r.id === id);
     if (!row) return;
     const updated = { ...row };
@@ -57,7 +57,7 @@ function SalaryPage() {
         updated.bonus -
         updated.penalty,
     );
-    upsertSalary(updated);
+    await upsertSalary(updated);
   };
 
   const { sorted, sort, toggle } = useSortable<RowWithName>(rows, {

@@ -384,7 +384,7 @@ function WorkerPage() {
     } catch {
       /* fall through — attendance still saves */
     }
-    upsertAttendance({
+    await upsertAttendance({
       id: existing?.id ?? newId(),
       employee_id: emp.id,
       date: today,

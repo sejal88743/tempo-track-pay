@@ -14,7 +14,7 @@ import {
   type SalaryRecord,
 } from "./store";
 
-export function generateSalaries(month: string): SalaryRecord[] {
+export async function generateSalaries(month: string): Promise<SalaryRecord[]> {
   const total = daysInMonth(month);
   const [y, m] = month.split("-").map(Number);
   const monthStart = `${month}-01`;
@@ -111,9 +111,9 @@ export function generateSalaries(month: string): SalaryRecord[] {
       changed = true;
     }
   }
-  if (changed) saveAdvances(allAdv);
+  if (changed) await saveAdvances(allAdv);
 
-  saveSalaries([...getSalaries().filter((s) => s.month !== month), ...records]);
+  await saveSalaries([...getSalaries().filter((s) => s.month !== month), ...records]);
 
   return records;
 }
