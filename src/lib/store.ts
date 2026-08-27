@@ -342,14 +342,15 @@ function dbToAttendance(r: Row): AttendanceRecord {
   };
 }
 function attendanceToDb(a: AttendanceRecord): Row {
+  const isAbsent = a.status === "absent";
   return {
     id: a.id,
     employee_id: a.employee_id,
-    attendance_date: a.date,
-    shift: a.shift,
+    attendance_date: normalizeDate(a.date),
+    shift: a.shift || "morning",
     status: a.status,
-    in_time: a.in_time ?? null,
-    out_time: a.out_time ?? null,
+    in_time: isAbsent ? null : (a.in_time ?? null),
+    out_time: isAbsent ? null : (a.out_time ?? null),
     location_ok: a.location_ok ?? null,
     method: a.method ?? "manual",
     marked_by:
@@ -456,8 +457,8 @@ export async function hydrate(force = false): Promise<boolean> {
   if (isHydrating) return false;
 
   const now = Date.now();
-  // Don't re-fetch unless forced (like initial load or manual sync) or at least 2 minutes passed
-  if (!force && now - lastHydrateTimestamp < 120000) {
+  // Throttle only if not forced and less than 5 seconds have passed
+  if (!force && now - lastHydrateTimestamp < 5000) {
     return true;
   }
 
@@ -467,7 +468,7 @@ export async function hydrate(force = false): Promise<boolean> {
   try {
     const [emp, att, lv, adv, sal, tmp, st] = await Promise.all([
       sb.from("employees").select("*").order("created_at", { ascending: false }),
-      sb.from("attendance").select("*").order("attendance_date", { ascending: false }).limit(10000),
+      sb.from("attendance").select("*").order("attendance_date", { ascending: false }).limit(20000),
       sb.from("leaves").select("*").order("created_at", { ascending: false }),
       sb.from("advances").select("*").order("created_at", { ascending: false }),
       sb.from("salaries").select("*").order("generated_at", { ascending: false }),
@@ -477,62 +478,20 @@ export async function hydrate(force = false): Promise<boolean> {
 
     if (emp.data) cache.employees = emp.data.map(dbToEmployee);
 
-    // Collect all local records (current cache, local storage, backup storage)
-    const localSources: AttendanceRecord[] = [
-      ...cache.attendance,
-      ...loadLocal<AttendanceRecord[]>("tsa_attendance", []),
-      ...loadLocal<AttendanceRecord[]>("tsa_attendance_backup", []),
-    ];
-
     const attMap = new Map<string, AttendanceRecord>();
-    const cloudKeys = new Set<string>();
 
+    // 1. Cloud data is the primary authoritative source of truth across all devices
     if (att.data) {
       const cloudList = att.data.map(dbToAttendance);
       for (const c of cloudList) {
         const normDate = normalizeDate(c.date);
-        const key = `${c.employee_id}_${normDate}_${c.shift || "morning"}`;
-        cloudKeys.add(key);
-        const existing = attMap.get(key);
-        if (!existing) {
-          attMap.set(key, { ...c, date: normDate });
-        } else {
-          if (c.status === "present" || c.in_time) {
-            attMap.set(key, { ...c, date: normDate });
-          }
-        }
+        const shift = c.shift || "morning";
+        const key = `${c.employee_id}_${normDate}_${shift}`;
+        attMap.set(key, { ...c, date: normDate, shift });
       }
     }
 
-    // Merge all local records so no locally marked attendance (e.g. 01/08/2026 - 06/08/2026) is ever lost
-    const missingCloudRowsMap = new Map<string, Row>();
-    for (const loc of localSources) {
-      if (!loc || !loc.employee_id || !loc.date) continue;
-      const normDate = normalizeDate(loc.date);
-      const shift = loc.shift || "morning";
-      const key = `${loc.employee_id}_${normDate}_${shift}`;
-      const normalizedLoc: AttendanceRecord = { ...loc, date: normDate, shift };
-
-      const existingInCloud = attMap.get(key);
-      if (!existingInCloud) {
-        attMap.set(key, normalizedLoc);
-        missingCloudRowsMap.set(key, attendanceToDb(normalizedLoc));
-      } else {
-        // If local has presence or in_time but cloud has absent/none, preserve local and sync
-        if (
-          (normalizedLoc.status === "present" || normalizedLoc.in_time) &&
-          existingInCloud.status !== "present"
-        ) {
-          const merged = { ...existingInCloud, ...normalizedLoc, id: existingInCloud.id };
-          attMap.set(key, merged);
-          missingCloudRowsMap.set(key, attendanceToDb(merged));
-        }
-      }
-    }
-
-    const missingCloudRowsToUpload = Array.from(missingCloudRowsMap.values());
-
-    // Merge pending offline queue
+    // 2. Overlay any genuinely un-synced offline writes waiting in pending queue
     const pendingRows = loadPending();
     for (const p of pendingRows) {
       const normDate = normalizeDate(p.attendance_date);
@@ -567,11 +526,6 @@ export async function hydrate(force = false): Promise<boolean> {
     ensureRealtimeSubscription();
     void flushPendingAttendance();
 
-    // Auto-upload any recovered local attendance rows to Supabase
-    if (missingCloudRowsToUpload.length > 0 && sb) {
-      void pushAttendanceRowsBatch(missingCloudRowsToUpload);
-    }
-
     return true;
   } catch (e) {
     console.error("[cloud-hydrate]", e);
@@ -604,25 +558,13 @@ function persistLocal() {
 }
 
 let realtimeChannel: ReturnType<typeof sb.channel> | null = null;
-let isRealtimeSubscribing = false;
+let realtimeInitialized = false;
 
 function ensureRealtimeSubscription() {
-  if (!sb || realtimeChannel || isRealtimeSubscribing) return;
-  isRealtimeSubscribing = true;
+  if (!sb || realtimeInitialized) return;
+  realtimeInitialized = true;
 
   try {
-    // Clean up any lingering channels to prevent "cannot add postgres_changes callbacks after subscribe"
-    const existingChannels = sb.getChannels();
-    for (const c of existingChannels) {
-      if (c.topic === "realtime:app-realtime-sync" || c.topic === "app-realtime-sync") {
-        try {
-          sb.removeChannel(c);
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-
     const applyUpsert = <T extends { id: string }>(arr: T[], next: T) => {
       const i = arr.findIndex((x) => x.id === next.id);
       if (i >= 0) arr[i] = next;
@@ -658,6 +600,7 @@ function ensureRealtimeSubscription() {
       .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, (p) => {
         if (p.eventType === "DELETE" && p.old) applyDelete(cache.employees, (p.old as Row).id);
         else if (p.new) applyUpsert(cache.employees, dbToEmployee(p.new as Row));
+        cache.employees = [...cache.employees];
         persistLocal();
         updateSyncState({
           status: "connected",
@@ -670,9 +613,12 @@ function ensureRealtimeSubscription() {
         bumpData();
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "attendance" }, (p) => {
-        if (p.eventType === "DELETE" && p.old)
+        if (p.eventType === "DELETE" && p.old) {
           applyAttendanceDelete(cache.attendance, (p.old as Row).id);
-        else if (p.new) applyAttendanceUpsert(cache.attendance, dbToAttendance(p.new as Row));
+        } else if (p.new) {
+          applyAttendanceUpsert(cache.attendance, dbToAttendance(p.new as Row));
+        }
+        cache.attendance = [...cache.attendance];
         persistLocal();
         updateSyncState({
           status: "connected",
@@ -687,6 +633,7 @@ function ensureRealtimeSubscription() {
       .on("postgres_changes", { event: "*", schema: "public", table: "leaves" }, (p) => {
         if (p.eventType === "DELETE" && p.old) applyDelete(cache.leaves, (p.old as Row).id);
         else if (p.new) applyUpsert(cache.leaves, dbToLeave(p.new as Row));
+        cache.leaves = [...cache.leaves];
         persistLocal();
         updateSyncState({
           status: "connected",
@@ -701,6 +648,7 @@ function ensureRealtimeSubscription() {
       .on("postgres_changes", { event: "*", schema: "public", table: "advances" }, (p) => {
         if (p.eventType === "DELETE" && p.old) applyDelete(cache.advances, (p.old as Row).id);
         else if (p.new) applyUpsert(cache.advances, dbToAdvance(p.new as Row));
+        cache.advances = [...cache.advances];
         persistLocal();
         updateSyncState({
           status: "connected",
@@ -715,6 +663,7 @@ function ensureRealtimeSubscription() {
       .on("postgres_changes", { event: "*", schema: "public", table: "salaries" }, (p) => {
         if (p.eventType === "DELETE" && p.old) applyDelete(cache.salaries, (p.old as Row).id);
         else if (p.new) applyUpsert(cache.salaries, dbToSalary(p.new as Row));
+        cache.salaries = [...cache.salaries];
         persistLocal();
         updateSyncState({
           status: "connected",
@@ -729,6 +678,7 @@ function ensureRealtimeSubscription() {
       .on("postgres_changes", { event: "*", schema: "public", table: "tempos" }, (p) => {
         if (p.eventType === "DELETE" && p.old) applyDelete(cache.tempos, (p.old as Row).id);
         else if (p.new) applyUpsert(cache.tempos, dbToTempo(p.new as Row));
+        cache.tempos = [...cache.tempos];
         persistLocal();
         updateSyncState({
           status: "connected",
@@ -760,28 +710,14 @@ function ensureRealtimeSubscription() {
     realtimeChannel = channel;
 
     channel.subscribe((status) => {
-      isRealtimeSubscribing = false;
       if (status === "SUBSCRIBED") {
         updateSyncState({ status: "connected" });
       } else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
         updateSyncState({ status: "offline" });
-        if (realtimeChannel === channel) {
-          try {
-            sb?.removeChannel(channel);
-          } catch {
-            /* ignore */
-          }
-          realtimeChannel = null;
-        }
-        if (typeof navigator !== "undefined" && navigator.onLine !== false) {
-          setTimeout(ensureRealtimeSubscription, 5000);
-        }
       }
     });
   } catch (e) {
     console.error("[realtime-init]", e);
-    isRealtimeSubscribing = false;
-    realtimeChannel = null;
   }
 }
 
@@ -790,11 +726,14 @@ if (isBrowser) {
   // Load data immediately on app launch
   void waitForInitialHydration();
 
-  // Multi-device sync triggers: only reconnect when coming back online or after long inactivity
+  // Multi-device sync triggers: fetch latest cloud updates on tab focus / visibility
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && Date.now() - lastHydrateTimestamp > 300000) {
-      void hydrate(false);
+    if (document.visibilityState === "visible") {
+      void hydrate(true);
     }
+  });
+  window.addEventListener("focus", () => {
+    void hydrate(true);
   });
   window.addEventListener("online", () => {
     updateSyncState({ status: "syncing" });
@@ -803,6 +742,17 @@ if (isBrowser) {
   window.addEventListener("offline", () => {
     updateSyncState({ status: "offline" });
   });
+
+  // Background polling fallback every 15s when page is active to guarantee multi-device sync
+  setInterval(() => {
+    if (
+      document.visibilityState === "visible" &&
+      typeof navigator !== "undefined" &&
+      navigator.onLine !== false
+    ) {
+      void hydrate(true);
+    }
+  }, 15000);
 }
 
 // Manual force sync (available to all components/pages)
@@ -910,9 +860,7 @@ export async function pushAttendanceRowsBatch(
     if (!existing) {
       dedupMap.set(key, normalizedRow);
     } else {
-      if (normalizedRow.status === "present" || normalizedRow.in_time) {
-        dedupMap.set(key, { ...existing, ...normalizedRow });
-      }
+      dedupMap.set(key, { ...existing, ...normalizedRow });
     }
   }
 

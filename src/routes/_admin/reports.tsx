@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,7 @@ import {
   newId,
   normalizeDate,
   useCloudSync,
+  hydrate,
   type AttendanceRecord,
 } from "@/lib/store";
 import { useSortable, SortHeader } from "@/lib/use-sort";
@@ -122,6 +123,11 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
   // Timer ref for distinguishing single-click vs double-click
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Fetch latest live cloud data on mount and month changes
+  useEffect(() => {
+    void hydrate(true);
+  }, [month]);
+
   // month is intentionally in deps to refresh employee list on month change
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const emps = useMemo(() => getEmployees().filter((e) => e.active), [month, syncVersion]);
@@ -140,9 +146,8 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
       const dd = normDate.slice(8, 10);
       if (!m.has(a.employee_id)) m.set(a.employee_id, new Map());
       const empDateMap = m.get(a.employee_id)!;
-      const prevStatus = empDateMap.get(dd);
-      // Priority: if any record on that date is present or late, record it
-      if (!prevStatus || a.status === "present" || a.status === "late") {
+      const prev = empDateMap.get(dd);
+      if (!prev || a.shift === "morning" || a.status === "present") {
         empDateMap.set(dd, a.status);
       }
     }
@@ -240,17 +245,19 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
       const existing = all.find(
         (a) => a.employee_id === empId && normalizeDate(a.date) === normDateStr,
       );
+      const isPresent = status === "present";
       const record: AttendanceRecord = {
         id: existing?.id ?? newId(),
         employee_id: empId,
         date: normDateStr,
         shift: existing?.shift ?? "morning",
         status,
-        in_time: existing?.in_time ?? (status === "present" ? new Date().toISOString() : undefined),
+        in_time: isPresent ? (existing?.in_time ?? new Date().toISOString()) : undefined,
+        out_time: isPresent ? existing?.out_time : undefined,
         method: "manual",
         marked_by: "admin",
       };
-      upsertAttendance(record);
+      await upsertAttendance(record);
       setRevision((r) => r + 1);
     },
     [month],
@@ -264,11 +271,11 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
         // second click — it's a double-click, cancel the pending single-click action
         clearTimeout(clickTimerRef.current);
         clickTimerRef.current = null;
-        markCell(empId, dd, "present");
+        void markCell(empId, dd, "present");
       } else {
         clickTimerRef.current = setTimeout(() => {
           clickTimerRef.current = null;
-          markCell(empId, dd, "absent");
+          void markCell(empId, dd, "absent");
         }, 280);
       }
     },
@@ -289,6 +296,7 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
 
     const dateStr = `${month}-${targetDay}`;
     const normDateStr = normalizeDate(dateStr);
+    const isPresent = status === "present";
     setIsBulkSaving(true);
 
     try {
@@ -303,8 +311,8 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
           date: normDateStr,
           shift: existing?.shift ?? "morning",
           status,
-          in_time:
-            existing?.in_time ?? (status === "present" ? new Date().toISOString() : undefined),
+          in_time: isPresent ? (existing?.in_time ?? new Date().toISOString()) : undefined,
+          out_time: isPresent ? existing?.out_time : undefined,
           method: "manual",
           marked_by: "admin",
         };
@@ -354,6 +362,7 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
             shift: existing?.shift ?? "morning",
             status: "present",
             in_time: existing?.in_time ?? new Date().toISOString(),
+            out_time: existing?.out_time,
             method: "manual",
             marked_by: "admin",
           });
@@ -376,6 +385,7 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
   const handleQuickColumnMark = async (dd: string, status: "present" | "absent") => {
     const dateStr = `${month}-${dd}`;
     const normDateStr = normalizeDate(dateStr);
+    const isPresent = status === "present";
     setIsBulkSaving(true);
     try {
       const all = getAttendance();
@@ -389,8 +399,8 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
           date: normDateStr,
           shift: existing?.shift ?? "morning",
           status,
-          in_time:
-            existing?.in_time ?? (status === "present" ? new Date().toISOString() : undefined),
+          in_time: isPresent ? (existing?.in_time ?? new Date().toISOString()) : undefined,
+          out_time: isPresent ? existing?.out_time : undefined,
           method: "manual",
           marked_by: "admin",
         };
@@ -917,22 +927,27 @@ function DailyReport({ date }: { date: string }) {
     }
   };
 
+  // Fetch latest live cloud data on mount and date change
+  useEffect(() => {
+    void hydrate(true);
+  }, [date]);
+
   // Single row quick status update with instant Supabase save
   const handleSingleStatus = async (empId: string, status: "present" | "absent" | "late") => {
     const existing = att.find((a) => a.employee_id === empId);
+    const isPresent = status === "present" || status === "late";
     const record: AttendanceRecord = {
       id: existing?.id ?? newId(),
       employee_id: empId,
-      date,
+      date: normalizeDate(date),
       shift: existing?.shift ?? "morning",
       status,
-      in_time:
-        existing?.in_time ??
-        (status === "present" || status === "late" ? new Date().toISOString() : undefined),
+      in_time: isPresent ? (existing?.in_time ?? new Date().toISOString()) : undefined,
+      out_time: isPresent ? existing?.out_time : undefined,
       method: "manual",
       marked_by: "admin",
     };
-    upsertAttendance(record);
+    await upsertAttendance(record);
     setRevision((r) => r + 1);
     toast.success(`Worker status updated to ${status} and saved to Supabase!`);
   };
@@ -947,6 +962,7 @@ function DailyReport({ date }: { date: string }) {
       return;
     }
 
+    const isPresent = status === "present";
     setIsDailySaving(true);
     try {
       const recordsToUpsert: AttendanceRecord[] = targetWorkers.map((e) => {
@@ -954,11 +970,11 @@ function DailyReport({ date }: { date: string }) {
         return {
           id: existing?.id ?? newId(),
           employee_id: e.id,
-          date,
+          date: normalizeDate(date),
           shift: existing?.shift ?? "morning",
           status,
-          in_time:
-            existing?.in_time ?? (status === "present" ? new Date().toISOString() : undefined),
+          in_time: isPresent ? (existing?.in_time ?? new Date().toISOString()) : undefined,
+          out_time: isPresent ? existing?.out_time : undefined,
           method: "manual",
           marked_by: "admin",
         };
@@ -1435,6 +1451,11 @@ const MONTH_NAMES = [
 
 function YearlyAttendanceReport({ year, onSelectMonth }: YearlyAttendanceReportProps) {
   const syncVersion = useCloudSync();
+
+  useEffect(() => {
+    void hydrate(true);
+  }, [year]);
+
   const emps = useMemo(() => {
     void syncVersion;
     return getEmployees().filter((e) => e.active);
@@ -1821,6 +1842,10 @@ function ReportsPage() {
   const currentMonth = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
   const currentYear = String(now.getFullYear());
   const todayStr = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+
+  useEffect(() => {
+    void hydrate(true);
+  }, []);
 
   const [tab, setTab] = useState<"matrix" | "yearly" | "daily">("matrix");
   const [month, setMonth] = useState(currentMonth);

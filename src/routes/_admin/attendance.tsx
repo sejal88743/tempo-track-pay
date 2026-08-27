@@ -37,6 +37,7 @@ import {
   newId,
   normalizeDate,
   useCloudSync,
+  hydrate,
   type Employee,
   type AttendanceRecord,
 } from "@/lib/store";
@@ -73,6 +74,10 @@ function AttendancePage() {
   const normalizedCurrentDate = normalizeDate(date) || todayISO();
   const isSelectedSunday = isSunday(normalizedCurrentDate);
   const isSelectedMonday = isMonday(normalizedCurrentDate);
+
+  useEffect(() => {
+    void hydrate(true);
+  }, [normalizedCurrentDate]);
 
   const attRecords = useMemo(() => {
     void syncVersion;
