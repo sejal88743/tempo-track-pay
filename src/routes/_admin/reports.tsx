@@ -128,9 +128,11 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
     void hydrate(true);
   }, [month]);
 
-  // month is intentionally in deps to refresh employee list on month change
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const emps = useMemo(() => getEmployees().filter((e) => e.active), [month, syncVersion]);
+  const emps = useMemo(() => {
+    void month;
+    void syncVersion;
+    return getEmployees().filter((e) => e.active !== false);
+  }, [month, syncVersion]);
   const totalDays = useMemo(() => daysInMonthCount(month), [month]);
   const dates = useMemo(
     () => Array.from({ length: totalDays }, (_, i) => pad2(i + 1)),
@@ -139,7 +141,8 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
 
   // Build attendance lookup: empId -> dateStr -> status
   const attMap = useMemo(() => {
-    const all = getAttendance().filter((a) => normalizeDate(a.date).startsWith(month));
+    const normMonth = month.trim().slice(0, 7);
+    const all = getAttendance().filter((a) => normalizeDate(a.date).startsWith(normMonth));
     const m = new Map<string, Map<string, string>>();
     for (const a of all) {
       const normDate = normalizeDate(a.date);
@@ -147,8 +150,13 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
       if (!m.has(a.employee_id)) m.set(a.employee_id, new Map());
       const empDateMap = m.get(a.employee_id)!;
       const prev = empDateMap.get(dd);
-      if (!prev || a.shift === "morning" || a.status === "present") {
+      // Give highest priority to 'present' and 'late'
+      if (!prev) {
         empDateMap.set(dd, a.status);
+      } else if (a.status === "present") {
+        empDateMap.set(dd, "present");
+      } else if (a.status === "late" && prev !== "present") {
+        empDateMap.set(dd, "late");
       }
     }
     return m;
@@ -158,6 +166,7 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
 
   // Build leave lookup: empId -> Set of date strings (dd) in this month
   const leaveMap = useMemo(() => {
+    void syncVersion;
     const monthStart = `${month}-01`;
     const [y, mo] = month.split("-").map(Number);
     const totalDaysInThisMonth = new Date(y, mo, 0).getDate();
@@ -178,7 +187,7 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
       }
     }
     return m;
-  }, [month]);
+  }, [month, syncVersion]);
 
   function dayLabel(dd: string) {
     const [y, mo] = month.split("-").map(Number);
@@ -885,7 +894,7 @@ function DailyReport({ date }: { date: string }) {
   const [isDailySaving, setIsDailySaving] = useState(false);
 
   const emps = useMemo(
-    () => getEmployees().filter((e) => e.active),
+    () => getEmployees().filter((e) => e.active !== false),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [date, revision, syncVersion],
   );
@@ -1458,7 +1467,7 @@ function YearlyAttendanceReport({ year, onSelectMonth }: YearlyAttendanceReportP
 
   const emps = useMemo(() => {
     void syncVersion;
-    return getEmployees().filter((e) => e.active);
+    return getEmployees().filter((e) => e.active !== false);
   }, [syncVersion]);
   const attendance = useMemo(() => {
     void syncVersion;
@@ -1838,6 +1847,7 @@ function YearlyAttendanceReport({ year, onSelectMonth }: YearlyAttendanceReportP
 
 // ── Main Page ──────────────────────────────────────────────────────────────
 function ReportsPage() {
+  const syncVersion = useCloudSync();
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
   const currentYear = String(now.getFullYear());

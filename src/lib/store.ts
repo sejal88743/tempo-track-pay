@@ -295,7 +295,7 @@ function dbToEmployee(r: Row): Employee {
     monthly_salary: Number(r.monthly_salary ?? 0),
     joining_date: r.joining_date,
     mobile: r.mobile_number ?? "",
-    active: !!r.active,
+    active: r.active !== false,
     biometric_enrolled: !!r.biometric_enrolled || credIds.length > 0,
     biometric_credential_id: credIds[0],
     credential_ids: credIds.length ? credIds : undefined,
@@ -313,7 +313,7 @@ function employeeToDb(e: Employee): Row {
     roles: rolesArr,
     extra_roles: e.extra_roles ?? [],
     monthly_salary: e.monthly_salary,
-    active: e.active,
+    active: e.active !== false,
     biometric_enrolled: !!e.biometric_enrolled,
     credential_ids:
       e.credential_ids ?? (e.biometric_credential_id ? [e.biometric_credential_id] : []),
@@ -325,8 +325,8 @@ function dbToAttendance(r: Row): AttendanceRecord {
   return {
     id: r.id,
     employee_id: r.employee_id,
-    date: r.attendance_date,
-    shift: r.shift,
+    date: normalizeDate(r.attendance_date || r.date || ""),
+    shift: r.shift || "morning",
     status: r.status,
     in_time: r.in_time ?? undefined,
     out_time: r.out_time ?? undefined,
@@ -578,13 +578,14 @@ function ensureRealtimeSubscription() {
 
     const applyAttendanceUpsert = (arr: AttendanceRecord[], next: AttendanceRecord) => {
       const normDate = normalizeDate(next.date);
-      const item = { ...next, date: normDate };
+      const shift = next.shift || "morning";
+      const item = { ...next, date: normDate, shift };
       const i = arr.findIndex(
         (x) =>
           x.id === item.id ||
           (x.employee_id === item.employee_id &&
             normalizeDate(x.date) === normDate &&
-            x.shift === item.shift),
+            (x.shift || "morning") === shift),
       );
       if (i >= 0) arr[i] = item;
       else arr.unshift(item);
