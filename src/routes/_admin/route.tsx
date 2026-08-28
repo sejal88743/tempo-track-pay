@@ -36,9 +36,11 @@ function AdminLayout() {
   const loc = useLocation();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   // Client-side auth guard — avoids SSR/client hydration mismatch
   useEffect(() => {
+    setMounted(true);
     if (!isAdminLoggedIn()) {
       navigate({ to: "/login" });
     }
@@ -195,7 +197,15 @@ function AdminLayout() {
 
       {/* ── Main Content ── */}
       <main className="flex-1 overflow-x-auto pb-16 md:pb-0">
-        <Outlet />
+        {mounted ? (
+          <Outlet />
+        ) : (
+          <div className="p-6 space-y-4 animate-pulse">
+            <div className="h-8 bg-muted/60 rounded-lg w-52" />
+            <div className="h-4 bg-muted/40 rounded w-80" />
+            <div className="h-72 bg-muted/30 rounded-2xl border" />
+          </div>
+        )}
       </main>
 
       {/* ── Mobile Bottom Navigation ── */}

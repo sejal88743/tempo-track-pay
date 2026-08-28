@@ -512,7 +512,7 @@ function WorkerPage() {
           </div>
           <div>
             <div className="text-white font-bold text-lg">Transport Staff</div>
-            <div className="text-white/50 text-xs">
+            <div className="text-white/50 text-xs" suppressHydrationWarning>
               {new Date().toLocaleDateString("en-IN", {
                 weekday: "long",
                 day: "numeric",
