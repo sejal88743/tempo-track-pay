@@ -17,6 +17,7 @@ import {
   Trash2,
   Eye,
   EyeOff,
+  Info,
 } from "lucide-react";
 import { getSettings, updateSettings, type AttendanceSchedule } from "@/lib/store";
 import { getCurrentPosition } from "@/lib/location";
