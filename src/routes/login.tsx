@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Truck, ShieldCheck, Users } from "lucide-react";
-import { getSettings, setAdminLoggedIn, todayDDMM_IST, isAdminLoggedIn } from "@/lib/store";
+import { adminLogin } from "@/lib/auth.functions";
+import { isAdminLoggedIn, refreshCloud, setAdminLoggedIn } from "@/lib/store";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Admin Login — Transport Staff" }] }),
@@ -29,16 +30,13 @@ function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      const settings = getSettings();
-      const secret = (settings.admin_secret || "MANOJ").toUpperCase();
-      const expected = todayDDMM_IST() + secret;
-      if (pw.trim().toUpperCase() !== expected) {
-        toast.error(`Galat password. Formula: DDMM + SECRET`);
-        return;
-      }
+      await adminLogin({ data: { password: pw.trim() } });
       setAdminLoggedIn(true);
+      await refreshCloud();
       toast.success("Welcome, Admin!");
       navigate({ to: "/dashboard" });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Login failed");
     } finally {
       setLoading(false);
     }

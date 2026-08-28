@@ -30,6 +30,7 @@ import { Route as AdminSalaryRouteImport } from './routes/_admin/salary'
 import { Route as AdminSettingsRouteImport } from './routes/_admin/settings'
 import { Route as AdminTemposRouteImport } from './routes/_admin/tempos'
 import { Route as WorkerMyRouteImport } from './routes/_worker/my'
+import { Route as ApiSyncRouteImport } from './routes/api/sync'
 import { Route as Char91DotmcpChar93InvokeToolToolRouteImport } from './routes/[.mcp]/invoke-tool/$tool'
 
 const IndexRoute = IndexRouteImport.update({
@@ -137,6 +138,11 @@ const WorkerMyRoute = WorkerMyRouteImport.update({
   path: '/my',
   getParentRoute: () => WorkerRouteRoute,
 } as any)
+const ApiSyncRoute = ApiSyncRouteImport.update({
+  id: '/api/sync',
+  path: '/api/sync',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const Char91DotmcpChar93InvokeToolToolRoute =
   Char91DotmcpChar93InvokeToolToolRouteImport.update({
     id: '/.mcp/invoke-tool/$tool',
@@ -164,6 +170,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AdminSettingsRoute
   '/tempos': typeof AdminTemposRoute
   '/my': typeof WorkerMyRoute
+  '/api/sync': typeof ApiSyncRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
 }
 export interface FileRoutesByTo {
@@ -186,6 +193,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AdminSettingsRoute
   '/tempos': typeof AdminTemposRoute
   '/my': typeof WorkerMyRoute
+  '/api/sync': typeof ApiSyncRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
 }
 export interface FileRoutesById {
@@ -211,6 +219,7 @@ export interface FileRoutesById {
   '/_admin/settings': typeof AdminSettingsRoute
   '/_admin/tempos': typeof AdminTemposRoute
   '/_worker/my': typeof WorkerMyRoute
+  '/api/sync': typeof ApiSyncRoute
   '/.mcp/invoke-tool/$tool': typeof Char91DotmcpChar93InvokeToolToolRoute
 }
 export interface FileRouteTypes {
@@ -235,6 +244,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tempos'
     | '/my'
+    | '/api/sync'
     | '/.mcp/invoke-tool/$tool'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -257,6 +267,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tempos'
     | '/my'
+    | '/api/sync'
     | '/.mcp/invoke-tool/$tool'
   id:
     | '__root__'
@@ -281,6 +292,7 @@ export interface FileRouteTypes {
     | '/_admin/settings'
     | '/_admin/tempos'
     | '/_worker/my'
+    | '/api/sync'
     | '/.mcp/invoke-tool/$tool'
   fileRoutesById: FileRoutesById
 }
@@ -294,6 +306,7 @@ export interface RootRouteChildren {
   WorkerRoute: typeof WorkerRoute
   Char91DotmcpChar93ListToolsRoute: typeof Char91DotmcpChar93ListToolsRoute
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  ApiSyncRoute: typeof ApiSyncRoute
   Char91DotmcpChar93InvokeToolToolRoute: typeof Char91DotmcpChar93InvokeToolToolRoute
 }
 
@@ -446,6 +459,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkerMyRouteImport
       parentRoute: typeof WorkerRouteRoute
     }
+    '/api/sync': {
+      id: '/api/sync'
+      path: '/api/sync'
+      fullPath: '/api/sync'
+      preLoaderRoute: typeof ApiSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/.mcp/invoke-tool/$tool': {
       id: '/.mcp/invoke-tool/$tool'
       path: '/.mcp/invoke-tool/$tool'
@@ -511,6 +531,7 @@ const rootRouteChildren: RootRouteChildren = {
   Char91DotmcpChar93ListToolsRoute: Char91DotmcpChar93ListToolsRoute,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
+  ApiSyncRoute: ApiSyncRoute,
   Char91DotmcpChar93InvokeToolToolRoute: Char91DotmcpChar93InvokeToolToolRoute,
 }
 export const routeTree = rootRouteImport

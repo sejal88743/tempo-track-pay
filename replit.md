@@ -2,18 +2,20 @@
 
 ## Project Overview
 
-A complete offline-first web app for managing transport staff attendance, salary, leaves, and advances. No backend server required — all data stored in browser localStorage.
+A complete web app for managing transport staff attendance, salary, leaves, and advances. PostgreSQL is the shared source of truth; localStorage is retained only as an offline snapshot and retry queue.
 
 ## Architecture
 
 - **Stack**: TanStack Start + React 19 + Vite + Bun + Tailwind CSS 4 + shadcn/ui
-- **Data**: 100% localStorage (no Supabase, no database)
-- **Auth**: Admin uses date-based password (DDMM + SECRET). Workers use biometric (WebAuthn)
+- **Data**: Replit PostgreSQL via the same-origin `/api/sync` endpoint, with SSE live change notifications and reconnect/focus refresh
+- **Auth**: HttpOnly cookie sessions backed by PostgreSQL. Admin uses date-based password (DDMM + SECRET). Workers use biometric (WebAuthn)
 - **Port**: 5000 (IPv4 `0.0.0.0`) — Replit does NOT support IPv6 (`::`)
 
 ## Key Files
 
-- `src/lib/store.ts` — all localStorage CRUD (employees, attendance, salary, leaves, advances, tempos, settings)
+- `src/lib/store.ts` — shared-data cache, optimistic UI, offline snapshots, retry queue, and realtime subscriptions
+- `src/routes/api/sync.ts` — authenticated shared snapshot/mutation API and SSE stream
+- `server/schema.sql` — development PostgreSQL schema
 - `src/lib/biometric.ts` — WebAuthn enroll + verify helpers
 - `src/lib/location.ts` — GPS fence (Haversine distance check)
 - `src/lib/salary-calc.ts` — pure client-side salary generation
@@ -50,5 +52,5 @@ MUST use `host: "0.0.0.0"` and `port: 5000`. The `@lovable.dev/vite-tanstack-con
 ## User Preferences
 
 - Hindi/Hinglish language preferred for UI labels
-- localStorage only, no server-side auth
+- PostgreSQL-backed shared data with localStorage offline fallback
 - Keep admin panel and worker portal separate

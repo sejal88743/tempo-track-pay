@@ -768,6 +768,12 @@ function ensureRealtimeSubscription() {
           });
           bumpData();
         }
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "__all__" }, () => {
+        // Server functions (godowns, assignments, auth-side mutations) do not
+        // have a row-level event. Rehydrate the complete shared snapshot so
+        // every open device still converges to the database truth.
+        void hydrate(true);
       });
 
     realtimeChannel = channel;
