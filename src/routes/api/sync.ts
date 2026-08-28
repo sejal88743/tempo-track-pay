@@ -10,7 +10,15 @@ import {
 } from "@/integrations/supabase/client.server";
 import { getSession } from "@/lib/session.server";
 
-const collections = ["employees", "attendance", "leaves", "advances", "salaries", "tempos", "settings"] as const;
+const collections = [
+  "employees",
+  "attendance",
+  "leaves",
+  "advances",
+  "salaries",
+  "tempos",
+  "settings",
+] as const;
 type Collection = (typeof collections)[number];
 
 const mutationSchema = z.object({
@@ -28,7 +36,9 @@ async function snapshot() {
   const session = await getSession();
   const isAdmin = session?.role === "admin";
   const [employees, attendance, leaves, advances, salaries, tempos, settings] = await Promise.all([
-    dbQuery(`SELECT * FROM employees ${isAdmin ? "" : "WHERE active = true"} ORDER BY created_at DESC`),
+    dbQuery(
+      `SELECT * FROM employees ${isAdmin ? "" : "WHERE active = true"} ORDER BY created_at DESC`,
+    ),
     dbQuery(`SELECT * FROM attendance ORDER BY attendance_date DESC LIMIT 20000`),
     isAdmin ? dbQuery(`SELECT * FROM leaves ORDER BY created_at DESC`) : Promise.resolve([]),
     isAdmin ? dbQuery(`SELECT * FROM advances ORDER BY created_at DESC`) : Promise.resolve([]),
@@ -143,10 +153,21 @@ async function upsert(collection: Collection, payload: unknown) {
         accuracy_meters=EXCLUDED.accuracy_meters, daily_salary_override=EXCLUDED.daily_salary_override
        RETURNING *`,
       [
-        row.id ?? null, row.employee_id, row.attendance_date, row.shift ?? "morning", row.status ?? "present",
-        row.in_time ?? null, row.out_time ?? null, row.location_ok ?? null, row.method ?? "manual",
-        row.marked_by ?? "admin", row.device_id ?? null, row.latitude ?? null, row.longitude ?? null,
-        row.accuracy_meters ?? null, row.daily_salary_override ?? null,
+        row.id ?? null,
+        row.employee_id,
+        row.attendance_date,
+        row.shift ?? "morning",
+        row.status ?? "present",
+        row.in_time ?? null,
+        row.out_time ?? null,
+        row.location_ok ?? null,
+        row.method ?? "manual",
+        row.marked_by ?? "admin",
+        row.device_id ?? null,
+        row.latitude ?? null,
+        row.longitude ?? null,
+        row.accuracy_meters ?? null,
+        row.daily_salary_override ?? null,
       ],
     );
   }
@@ -158,7 +179,15 @@ async function upsert(collection: Collection, payload: unknown) {
        ON CONFLICT (id) DO UPDATE SET employee_id=EXCLUDED.employee_id, leave_type=EXCLUDED.leave_type,
        from_date=EXCLUDED.from_date, to_date=EXCLUDED.to_date, reason=EXCLUDED.reason, status=EXCLUDED.status
        RETURNING *`,
-      [row.id ?? null, row.employee_id, row.leave_type ?? row.type ?? "casual", row.from_date, row.to_date, row.reason ?? null, row.status ?? "pending"],
+      [
+        row.id ?? null,
+        row.employee_id,
+        row.leave_type ?? row.type ?? "casual",
+        row.from_date,
+        row.to_date,
+        row.reason ?? null,
+        row.status ?? "pending",
+      ],
     );
   }
 
@@ -169,7 +198,16 @@ async function upsert(collection: Collection, payload: unknown) {
        ON CONFLICT (id) DO UPDATE SET employee_id=EXCLUDED.employee_id, amount=EXCLUDED.amount,
        reason=EXCLUDED.reason, taken_on=EXCLUDED.taken_on, status=EXCLUDED.status,
        deducted=EXCLUDED.deducted, deducted_in_month=EXCLUDED.deducted_in_month RETURNING *`,
-      [row.id ?? null, row.employee_id, Number(row.amount ?? 0), row.reason ?? null, row.taken_on ?? row.date, row.status ?? "pending", !!row.deducted, row.deducted_in_month ?? row.deducted_month ?? null],
+      [
+        row.id ?? null,
+        row.employee_id,
+        Number(row.amount ?? 0),
+        row.reason ?? null,
+        row.taken_on ?? row.date,
+        row.status ?? "pending",
+        !!row.deducted,
+        row.deducted_in_month ?? row.deducted_month ?? null,
+      ],
     );
   }
 
@@ -185,10 +223,23 @@ async function upsert(collection: Collection, payload: unknown) {
        per_day=EXCLUDED.per_day, gross=EXCLUDED.gross, advance_deducted=EXCLUDED.advance_deducted,
        leave_deduction=EXCLUDED.leave_deduction, bonus=EXCLUDED.bonus, penalty=EXCLUDED.penalty,
        final_salary=EXCLUDED.final_salary RETURNING *`,
-      [row.id ?? null, row.employee_id, row.month, Number(row.total_days ?? 0), Number(row.present_days ?? 0),
-        Number(row.absent_days ?? 0), Number(row.paid_leave_days ?? 0), Number(row.unpaid_leave_days ?? 0),
-        Number(row.per_day ?? 0), Number(row.gross ?? 0), Number(row.advance_deducted ?? 0),
-        Number(row.leave_deduction ?? 0), Number(row.bonus ?? 0), Number(row.penalty ?? 0), Number(row.final_salary ?? 0)],
+      [
+        row.id ?? null,
+        row.employee_id,
+        row.month,
+        Number(row.total_days ?? 0),
+        Number(row.present_days ?? 0),
+        Number(row.absent_days ?? 0),
+        Number(row.paid_leave_days ?? 0),
+        Number(row.unpaid_leave_days ?? 0),
+        Number(row.per_day ?? 0),
+        Number(row.gross ?? 0),
+        Number(row.advance_deducted ?? 0),
+        Number(row.leave_deduction ?? 0),
+        Number(row.bonus ?? 0),
+        Number(row.penalty ?? 0),
+        Number(row.final_salary ?? 0),
+      ],
     );
   }
 
@@ -217,7 +268,10 @@ async function handleMutation(request: Request) {
 
   if (operation === "delete") {
     if (!id) return jsonError("Delete id is required.");
-    const existing = await dbQueryOne<Record<string, unknown>>(`SELECT * FROM ${collection} WHERE id = $1`, [id]);
+    const existing = await dbQueryOne<Record<string, unknown>>(
+      `SELECT * FROM ${collection} WHERE id = $1`,
+      [id],
+    );
     await dbExecute(`DELETE FROM ${collection} WHERE id = $1`, [id]);
     broadcastDataChange({ table: collection, eventType: "DELETE", row: existing });
     return Response.json({ data: null });
@@ -250,9 +304,14 @@ function streamResponse() {
           // The browser already closed the connection.
         }
       };
-      unsubscribe = subscribeToDataChanges((change) => send({ ...change, revision: getDataRevision() }));
+      unsubscribe = subscribeToDataChanges((change) =>
+        send({ ...change, revision: getDataRevision() }),
+      );
       send({ type: "ready", revision: getDataRevision() });
-      heartbeat = setInterval(() => send({ type: "heartbeat", revision: getDataRevision() }), 25_000);
+      heartbeat = setInterval(
+        () => send({ type: "heartbeat", revision: getDataRevision() }),
+        25_000,
+      );
     },
     cancel() {
       unsubscribe();

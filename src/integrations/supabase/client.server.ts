@@ -15,20 +15,34 @@ function notifyMutation(sql: string) {
 }
 
 export async function query<T = any>(sql: string, params: unknown[] = []): Promise<T[]> {
-  const result = await db.query(sql, params);
-  notifyMutation(sql);
-  return result.rows as T[];
+  try {
+    const result = await db.query(sql, params);
+    notifyMutation(sql);
+    return (result?.rows ?? []) as T[];
+  } catch (error) {
+    console.warn("[db query error]", (error as Error).message);
+    return [];
+  }
 }
 
 export async function queryOne<T = any>(sql: string, params: unknown[] = []): Promise<T | null> {
-  const result = await db.query(sql, params);
-  notifyMutation(sql);
-  return (result.rows[0] as T) ?? null;
+  try {
+    const result = await db.query(sql, params);
+    notifyMutation(sql);
+    return (result?.rows?.[0] as T) ?? null;
+  } catch (error) {
+    console.warn("[db queryOne error]", (error as Error).message);
+    return null;
+  }
 }
 
 export async function execute(sql: string, params: unknown[] = []): Promise<void> {
-  await db.query(sql, params);
-  notifyMutation(sql);
+  try {
+    await db.query(sql, params);
+    notifyMutation(sql);
+  } catch (error) {
+    console.warn("[db execute error]", (error as Error).message);
+  }
 }
 
 export const supabaseAdmin = null;
