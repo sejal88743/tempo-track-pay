@@ -10,20 +10,20 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Transport Staff Attendance & Salary" },
+      { title: "Tempo Track Pay" },
       {
         name: "description",
-        content: "Attendance, tempo assignment and salary management for transport teams.",
+        content: "Employee attendance, salary, advances, leaves, and tempo management system",
       },
-      { property: "og:title", content: "Transport Staff Attendance & Salary" },
-      { name: "twitter:title", content: "Transport Staff Attendance & Salary" },
+      { property: "og:title", content: "Tempo Track Pay" },
+      { name: "twitter:title", content: "Tempo Track Pay" },
       {
         property: "og:description",
-        content: "Attendance, tempo assignment and salary management for transport teams.",
+        content: "Employee attendance, salary, advances, leaves, and tempo management system",
       },
       {
         name: "twitter:description",
-        content: "Attendance, tempo assignment and salary management for transport teams.",
+        content: "Employee attendance, salary, advances, leaves, and tempo management system",
       },
       {
         property: "og:image",

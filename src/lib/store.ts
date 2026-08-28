@@ -115,6 +115,8 @@ export type AttendanceSchedule = {
 
 export type AppSettings = {
   admin_secret: string;
+  admin_password?: string;
+  admin_face_descriptor?: number[];
   office_location?: { lat: number; lng: number; radius_meters: number; label: string };
   sheets_url?: string;
   google_access_token?: string;
@@ -141,7 +143,10 @@ type Cache = {
   settings: AppSettings;
 };
 
-const DEFAULT_SETTINGS: AppSettings = { admin_secret: "MANOJ" };
+const DEFAULT_SETTINGS: AppSettings = {
+  admin_secret: "MANOJ",
+  admin_password: "MANOJ",
+};
 
 const cache: Cache = {
   employees: loadLocal("tsa_employees", []),
@@ -622,6 +627,33 @@ function persistLocal() {
 let realtimeChannel: ReturnType<typeof sb.channel> | null = null;
 let realtimeInitialized = false;
 
+export function broadcastMutation(
+  table: "attendance" | "employees" | "leaves" | "advances" | "salaries" | "tempos" | "settings",
+  action: "upsert" | "delete" | "batch",
+  data?: unknown,
+  id?: string,
+) {
+  if (!sb || !realtimeChannel) return;
+  try {
+    realtimeChannel
+      .send({
+        type: "broadcast",
+        event: "cloud_mutation",
+        payload: {
+          table,
+          action,
+          data,
+          id,
+          senderDeviceId: getDeviceId(),
+          timestamp: Date.now(),
+        },
+      })
+      .catch((e) => console.warn("[broadcast-send-error]", e));
+  } catch (err) {
+    /* ignore broadcast error */
+  }
+}
+
 function ensureRealtimeSubscription() {
   if (!sb || realtimeInitialized) return;
   realtimeInitialized = true;
@@ -660,6 +692,93 @@ function ensureRealtimeSubscription() {
 
     const channel = sb
       .channel("app-realtime-sync")
+      .on("broadcast", { event: "cloud_mutation" }, (p) => {
+        const payload = p.payload as {
+          table: string;
+          action: "upsert" | "delete" | "batch";
+          data?: Record<string, unknown> | Record<string, unknown>[];
+          id?: string;
+          senderDeviceId?: string;
+        };
+        if (!payload) return;
+        // Ignore echo from our own device (already applied locally)
+        if (payload.senderDeviceId && payload.senderDeviceId === getDeviceId()) {
+          return;
+        }
+
+        if (payload.table === "attendance") {
+          if (payload.action === "delete" && payload.id) {
+            applyAttendanceDelete(cache.attendance, payload.id);
+          } else if (payload.action === "upsert" && payload.data) {
+            applyAttendanceUpsert(cache.attendance, payload.data);
+          } else {
+            void hydrate(true);
+          }
+          cache.attendance = [...cache.attendance];
+        } else if (payload.table === "employees") {
+          if (payload.action === "delete" && payload.id) {
+            applyDelete(cache.employees, payload.id);
+          } else if (payload.action === "upsert" && payload.data) {
+            applyUpsert(cache.employees, payload.data);
+          } else {
+            void hydrate(true);
+          }
+          cache.employees = [...cache.employees];
+        } else if (payload.table === "leaves") {
+          if (payload.action === "delete" && payload.id) {
+            applyDelete(cache.leaves, payload.id);
+          } else if (payload.action === "upsert" && payload.data) {
+            applyUpsert(cache.leaves, payload.data);
+          } else {
+            void hydrate(true);
+          }
+          cache.leaves = [...cache.leaves];
+        } else if (payload.table === "advances") {
+          if (payload.action === "delete" && payload.id) {
+            applyDelete(cache.advances, payload.id);
+          } else if (payload.action === "upsert" && payload.data) {
+            applyUpsert(cache.advances, payload.data);
+          } else {
+            void hydrate(true);
+          }
+          cache.advances = [...cache.advances];
+        } else if (payload.table === "salaries") {
+          if (payload.action === "delete" && payload.id) {
+            applyDelete(cache.salaries, payload.id);
+          } else if (payload.action === "upsert" && payload.data) {
+            applyUpsert(cache.salaries, payload.data);
+          } else {
+            void hydrate(true);
+          }
+          cache.salaries = [...cache.salaries];
+        } else if (payload.table === "tempos") {
+          if (payload.action === "delete" && payload.id) {
+            applyDelete(cache.tempos, payload.id);
+          } else if (payload.action === "upsert" && payload.data) {
+            applyUpsert(cache.tempos, payload.data);
+          } else {
+            void hydrate(true);
+          }
+          cache.tempos = [...cache.tempos];
+        } else if (payload.table === "settings") {
+          if (payload.data) {
+            cache.settings = { ...DEFAULT_SETTINGS, ...payload.data };
+          } else {
+            void hydrate(true);
+          }
+        }
+
+        persistLocal();
+        updateSyncState({
+          status: "connected",
+          lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+        });
+        bumpData();
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "employees" }, (p) => {
         if (p.eventType === "DELETE" && p.old) applyDelete(cache.employees, (p.old as Row).id);
         else if (p.new) applyUpsert(cache.employees, dbToEmployee(p.new as Row));
@@ -920,6 +1039,7 @@ async function pushAttendanceRow(row: PendingRow): Promise<boolean> {
     else list.unshift(saved);
     cache.attendance = list;
     saveLocal("tsa_attendance", list);
+    broadcastMutation("attendance", "upsert", saved);
     bumpData();
   }
   return true;
@@ -1000,6 +1120,7 @@ export async function pushAttendanceRowsBatch(
       lastSyncedAt: new Date().toISOString(),
       errorMessage: undefined,
     });
+    broadcastMutation("attendance", "batch");
   }
   bumpData();
   fire("Attendance");
@@ -1043,6 +1164,7 @@ export async function saveEmployees(list: Employee[]): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("employees", "batch");
     }
   }
   fire("Employees");
@@ -1068,6 +1190,7 @@ export async function upsertEmployee(emp: Employee): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("employees", "upsert", emp);
     }
   }
   fire("Employees");
@@ -1100,6 +1223,7 @@ export async function deleteEmployee(id: string): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("employees", "delete", undefined, id);
     }
   }
   fire("Employees");
@@ -1344,6 +1468,7 @@ export async function deleteAttendance(id: string): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("attendance", "delete", undefined, id);
     }
   }
   fire("Attendance");
@@ -1372,6 +1497,7 @@ export async function saveLeaves(list: Leave[]): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("leaves", "batch");
     }
   }
   fire("Leaves");
@@ -1397,6 +1523,7 @@ export async function upsertLeave(l: Leave): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("leaves", "upsert", l);
     }
   }
   fire("Leaves");
@@ -1418,6 +1545,7 @@ export async function deleteLeave(id: string): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("leaves", "delete", undefined, id);
     }
   }
   fire("Leaves");
@@ -1446,6 +1574,7 @@ export async function saveAdvances(list: Advance[]): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("advances", "batch");
     }
   }
   fire("Advances");
@@ -1471,6 +1600,7 @@ export async function upsertAdvance(a: Advance): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("advances", "upsert", a);
     }
   }
   fire("Advances");
@@ -1492,6 +1622,7 @@ export async function deleteAdvance(id: string): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("advances", "delete", undefined, id);
     }
   }
   fire("Advances");
@@ -1520,6 +1651,7 @@ export async function saveSalaries(list: SalaryRecord[]): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("salaries", "batch");
     }
   }
   fire("Salary");
@@ -1547,6 +1679,7 @@ export async function upsertSalary(s: SalaryRecord): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("salaries", "upsert", s);
     }
   }
   fire("Salary");
@@ -1568,6 +1701,7 @@ export async function deleteSalary(id: string): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("salaries", "delete", undefined, id);
     }
   }
   fire("Salary");
@@ -1596,6 +1730,7 @@ export async function saveTempos(list: Tempo[]): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("tempos", "batch");
     }
   }
   fire("Tempos");
@@ -1621,6 +1756,7 @@ export async function upsertTempo(t: Tempo): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("tempos", "upsert", t);
     }
   }
   fire("Tempos");
@@ -1642,6 +1778,7 @@ export async function deleteTempo(id: string): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("tempos", "delete", undefined, id);
     }
   }
   fire("Tempos");
@@ -1671,6 +1808,7 @@ export async function saveSettings(s: AppSettings): Promise<boolean> {
         lastSyncedAt: new Date().toISOString(),
         errorMessage: undefined,
       });
+      broadcastMutation("settings", "upsert", s);
     }
   }
   return ok;

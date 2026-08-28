@@ -45,7 +45,6 @@ import {
   getSettings,
   upsertAttendance,
   upsertBulkAttendance,
-  todayDDMM_IST,
   newId,
   normalizeDate,
   useCloudSync,
@@ -1386,12 +1385,13 @@ function PasswordModal({ onSuccess, onClose }: { onSuccess: () => void; onClose:
   const [error, setError] = useState(false);
 
   const check = () => {
-    const secret = (getSettings().admin_secret ?? "MANOJ").toUpperCase();
-    const expected = todayDDMM_IST() + secret;
-    const clean = pw.trim().toUpperCase();
+    const settings = getSettings();
+    const saved = (settings.admin_password || settings.admin_secret || "MANOJ").trim();
+    const clean = pw.trim();
+
     if (
-      clean === expected ||
-      clean === secret ||
+      clean === saved ||
+      clean.toUpperCase() === saved.toUpperCase() ||
       clean === "MANOJ" ||
       clean === "ADMIN" ||
       clean === "ADMIN123" ||
@@ -1406,22 +1406,22 @@ function PasswordModal({ onSuccess, onClose }: { onSuccess: () => void; onClose:
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xs p-6 space-y-4">
+      <div className="bg-card text-card-foreground rounded-2xl shadow-2xl w-full max-w-xs p-6 space-y-4 border">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-lg">
             <Lock className="size-5 text-amber-500" /> Edit Mode Unlock
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="size-5" />
           </button>
         </div>
-        <p className="text-sm text-muted-foreground">
-          Wahi password jo Admin Login me lagta hai (DDMM + SECRET)
+        <p className="text-xs text-muted-foreground">
+          Attendance edit karne ke liye Admin Password enter karein.
         </p>
 
         <Input
           type="password"
-          placeholder="Aaj ka admin password…"
+          placeholder="Enter Admin Password"
           value={pw}
           autoFocus
           onChange={(e) => {
@@ -1431,7 +1431,9 @@ function PasswordModal({ onSuccess, onClose }: { onSuccess: () => void; onClose:
           onKeyDown={(e) => e.key === "Enter" && check()}
           className={error ? "border-red-500 focus-visible:ring-red-500" : ""}
         />
-        {error && <p className="text-xs text-red-500">Galat password. Dobara try karein.</p>}
+        {error && (
+          <p className="text-xs text-red-500">Galat password. Kripya sahi password daalein.</p>
+        )}
         <div className="flex gap-2">
           <Button variant="outline" className="flex-1" onClick={onClose}>
             Cancel

@@ -116,7 +116,7 @@ function EmployeesPage() {
     setEditing({ ...editing, extra_roles: updated });
   };
 
-  const save = () => {
+  const save = async () => {
     if (!editing?.full_name?.trim()) {
       toast.error("Naam enter karein");
       return;
@@ -125,7 +125,7 @@ function EmployeesPage() {
       toast.error("Primary role select karein");
       return;
     }
-    upsertEmployee({
+    await upsertEmployee({
       id: editing.id ?? newId(),
       full_name: editing.full_name.trim(),
       role: editing.role as Role,
@@ -143,7 +143,7 @@ function EmployeesPage() {
 
   const confirmDelete = async (emp: Employee) => {
     try {
-      deleteEmployee(emp.id);
+      await deleteEmployee(emp.id);
       toast.success(`${emp.full_name} ko successfully remove/delete kar diya gaya.`);
       setDeletingEmp(null);
     } catch (err) {
@@ -170,25 +170,26 @@ function EmployeesPage() {
     }
   };
 
-  const confirmMdbImport = () => {
+  const confirmMdbImport = async () => {
     if (!mdbPreview) return;
     const toImport = mdbPreview.filter((p) => !p.skip);
-    let count = 0;
-    toImport.forEach((p) => {
-      upsertEmployee({
-        id: newId(),
-        full_name: p.name,
-        role: "Delivery Man",
-        extra_roles: [],
-        monthly_salary: 0,
-        joining_date: new Date().toISOString().slice(0, 10),
-        mobile: "",
-        active: p.active,
-        biometric_enrolled: false,
-      });
-      count++;
-    });
-    toast.success(`✅ ${count} employees import ho gaye! Role & salary manually set karein.`);
+    const newEmps: Employee[] = toImport.map((p) => ({
+      id: newId(),
+      full_name: p.name,
+      role: "Delivery Man",
+      extra_roles: [],
+      monthly_salary: 0,
+      joining_date: new Date().toISOString().slice(0, 10),
+      mobile: "",
+      active: p.active,
+      biometric_enrolled: false,
+    }));
+    for (const emp of newEmps) {
+      await upsertEmployee(emp);
+    }
+    toast.success(
+      `✅ ${newEmps.length} employees import ho gaye! Role & salary manually set karein.`,
+    );
     setMdbPreview(null);
   };
 

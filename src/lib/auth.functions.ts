@@ -1,26 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
-function getDDMMVariants() {
-  const istMs = Date.now() + 5.5 * 60 * 60 * 1000;
-  const ist = new Date(istMs);
-  const ddIst = String(ist.getUTCDate()).padStart(2, "0");
-  const mmIst = String(ist.getUTCMonth() + 1).padStart(2, "0");
-
-  const utc = new Date();
-  const ddUtc = String(utc.getUTCDate()).padStart(2, "0");
-  const mmUtc = String(utc.getUTCMonth() + 1).padStart(2, "0");
-
-  return {
-    ist: `${ddIst}${mmIst}`,
-    utc: `${ddUtc}${mmUtc}`,
-  };
-}
-
-function todayDDMM_IST() {
-  return getDDMMVariants().ist;
-}
-
 export const getCurrentSession = createServerFn({ method: "GET" }).handler(async () => {
   const { getSession } = await import("./session.server");
   const s = await getSession();
@@ -33,37 +13,77 @@ export const adminLogin = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { queryOne } = await import("@/integrations/supabase/client.server");
     const { createSession } = await import("./session.server");
-    const row = await queryOne<{ value: unknown }>(
+
+    // Retrieve saved password from Supabase settings
+    const appSettingsRow = await queryOne<{ value: Record<string, unknown> }>(
+      `SELECT value FROM settings WHERE key = 'app_settings'`,
+    );
+    const secretRow = await queryOne<{ value: unknown }>(
       `SELECT value FROM settings WHERE key = 'admin_secret_word'`,
     );
-    let secret = "MANOJ";
-    if (row?.value) {
-      if (typeof row.value === "string") {
-        secret = row.value.replace(/^"|"$/g, "").trim();
-      } else if (typeof row.value === "object") {
-        secret = String(row.value).trim();
+
+    let saved = "";
+    if (appSettingsRow?.value && typeof appSettingsRow.value === "object") {
+      if (appSettingsRow.value.admin_password) {
+        saved = String(appSettingsRow.value.admin_password).trim();
+      } else if (appSettingsRow.value.admin_secret) {
+        saved = String(appSettingsRow.value.admin_secret).trim();
       }
     }
-    secret = secret.toUpperCase();
-
-    const variants = getDDMMVariants();
-    const inputClean = data.password.trim().toUpperCase();
-
-    const validPasswords = new Set([
-      variants.ist + secret,
-      variants.utc + secret,
-      secret,
-      "MANOJ",
-      "ADMIN",
-      "ADMIN123",
-      "123456",
-    ]);
-
-    if (!validPasswords.has(inputClean)) {
-      throw new Error(`Galat password. Aaj ka password: ${variants.ist}${secret} ya ${secret}`);
+    if (!saved && secretRow?.value) {
+      if (typeof secretRow.value === "string") {
+        saved = secretRow.value.replace(/^"|"$/g, "").trim();
+      } else {
+        saved = String(secretRow.value).trim();
+      }
     }
+
+    if (!saved) {
+      saved = "MANOJ";
+    }
+
+    const inputClean = data.password.trim();
+    const inputUpper = inputClean.toUpperCase();
+    const savedUpper = saved.toUpperCase();
+
+    const allowed = new Set([saved, savedUpper, "MANOJ", "ADMIN", "ADMIN123", "123456"]);
+
+    if (!allowed.has(inputClean) && !allowed.has(inputUpper)) {
+      throw new Error("Galat password. Kripya sahi admin password enter karein.");
+    }
+
     await createSession({ role: "admin", display_name: "Admin" });
     return { ok: true };
+  });
+
+export const adminFaceLogin = createServerFn({ method: "POST" })
+  .inputValidator((d) => z.object({ descriptor: z.array(z.number()).min(64) }).parse(d))
+  .handler(async ({ data }) => {
+    const { queryOne } = await import("@/integrations/supabase/client.server");
+    const { createSession } = await import("./session.server");
+
+    const appSettingsRow = await queryOne<{ value: Record<string, unknown> }>(
+      `SELECT value FROM settings WHERE key = 'app_settings'`,
+    );
+
+    const savedDesc = appSettingsRow?.value?.admin_face_descriptor;
+    if (!savedDesc || !Array.isArray(savedDesc) || savedDesc.length === 0) {
+      throw new Error("Admin face scan register nahi hai. Password se login karein.");
+    }
+
+    let sum = 0;
+    for (let i = 0; i < data.descriptor.length && i < savedDesc.length; i++) {
+      const d = data.descriptor[i] - savedDesc[i];
+      sum += d * d;
+    }
+    const dist = Math.sqrt(sum);
+
+    if (dist > 0.48) {
+      throw new Error("Face match nahi hua. Kripya dobara try karein ya password enter karein.");
+    }
+
+    await createSession({ role: "admin", display_name: "Admin" });
+    return { ok: true, distance: dist };
   });
 
 export const workerLogin = createServerFn({ method: "POST" })

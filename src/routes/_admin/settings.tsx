@@ -5,11 +5,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { KeyRound, MapPin, Cloud, RefreshCw, Link2, Info, Clock } from "lucide-react";
-import { getSettings, updateSettings, todayDDMM_IST, type AttendanceSchedule } from "@/lib/store";
+import {
+  KeyRound,
+  MapPin,
+  Cloud,
+  RefreshCw,
+  Link2,
+  Clock,
+  ShieldCheck,
+  Camera,
+  Trash2,
+  Eye,
+  EyeOff,
+} from "lucide-react";
+import { getSettings, updateSettings, type AttendanceSchedule } from "@/lib/store";
 import { getCurrentPosition } from "@/lib/location";
 import { createMasterSpreadsheet } from "@/lib/sheets-gateway.functions";
 import { syncAll } from "@/lib/sync";
+import { AdminFaceEnrollDialog } from "@/components/AdminFaceEnrollDialog";
 
 export const Route = createFileRoute("/_admin/settings")({ component: SettingsPage });
 
@@ -22,13 +35,14 @@ const DEFAULT_SCHEDULE: AttendanceSchedule = {
 };
 
 function SettingsPage() {
-  const [secret, setSecret] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [settings, setSettings] = useState(getSettings());
   const [locLoading, setLocLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
   const [radius, setRadius] = useState(200);
   const [sheetUrl, setSheetUrl] = useState("");
-  const [googleClientId, setGoogleClientId] = useState("");
+  const [faceDialogOpen, setFaceDialogOpen] = useState(false);
   const [schedule, setSchedule] = useState<AttendanceSchedule>(
     getSettings().attendance_schedule ?? DEFAULT_SCHEDULE,
   );
@@ -45,17 +59,21 @@ function SettingsPage() {
     reload();
   }, []);
 
-  const ddmm = todayDDMM_IST();
-  const currentSecret = settings.admin_secret || "MANOJ";
-
-  const saveSecret = () => {
-    if (secret.length < 2) {
-      toast.error("Minimum 2 characters");
+  const savePassword = async () => {
+    const clean = newPassword.trim();
+    if (clean.length < 2) {
+      toast.error("Password kam se kam 2 characters ka hona chahiye.");
       return;
     }
-    updateSettings({ admin_secret: secret.toUpperCase() });
-    toast.success(`Secret updated! Aaj ka password: ${ddmm}${secret.toUpperCase()}`);
-    setSecret("");
+    await updateSettings({ admin_password: clean, admin_secret: clean });
+    toast.success("✅ Admin Password successfully save ho gaya!");
+    setNewPassword("");
+    reload();
+  };
+
+  const removeAdminFace = async () => {
+    await updateSettings({ admin_face_descriptor: undefined });
+    toast.success("Admin face scan remove kar diya gaya.");
     reload();
   };
 
@@ -63,7 +81,7 @@ function SettingsPage() {
     setLocLoading(true);
     try {
       const pos = await getCurrentPosition();
-      updateSettings({
+      await updateSettings({
         office_location: {
           lat: pos.lat,
           lng: pos.lng,
@@ -80,20 +98,20 @@ function SettingsPage() {
     }
   };
 
-  const clearLocation = () => {
-    updateSettings({ office_location: undefined });
+  const clearLocation = async () => {
+    await updateSettings({ office_location: undefined });
     toast.success("Location check disabled");
     reload();
   };
 
-  const saveSchedule = () => {
-    updateSettings({ attendance_schedule: schedule });
+  const saveSchedule = async () => {
+    await updateSettings({ attendance_schedule: schedule });
     toast.success("Attendance schedule saved!");
     reload();
   };
 
-  const saveSheetUrl = () => {
-    updateSettings({ sheets_url: sheetUrl });
+  const saveSheetUrl = async () => {
+    await updateSettings({ sheets_url: sheetUrl });
     toast.success("Sheet URL saved");
     reload();
   };
@@ -102,7 +120,7 @@ function SettingsPage() {
     setSyncLoading(true);
     try {
       const res = await createMasterSpreadsheet({ data: { title: "Transport Staff" } });
-      updateSettings({
+      await updateSettings({
         spreadsheet_id: res.spreadsheetId,
         sheets_url: res.url,
         sheets_sync_enabled: true,
@@ -136,13 +154,13 @@ function SettingsPage() {
     }
   };
 
-  const toggleSync = (on: boolean) => {
-    updateSettings({ sheets_sync_enabled: on });
+  const toggleSync = async (on: boolean) => {
+    await updateSettings({ sheets_sync_enabled: on });
     toast.success(on ? "Auto-sync ON" : "Auto-sync OFF");
     reload();
   };
 
-  const linkExistingSheet = () => {
+  const linkExistingSheet = async () => {
     // Extract ID from URL
     const m = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
     const id = m?.[1] ?? sheetUrl.trim();
@@ -150,7 +168,7 @@ function SettingsPage() {
       toast.error("Valid spreadsheet URL ya ID daalein");
       return;
     }
-    updateSettings({
+    await updateSettings({
       spreadsheet_id: id,
       sheets_url: `https://docs.google.com/spreadsheets/d/${id}`,
       sheets_sync_enabled: true,
@@ -159,44 +177,100 @@ function SettingsPage() {
     reload();
   };
 
+  const hasFace =
+    Array.isArray(settings.admin_face_descriptor) && settings.admin_face_descriptor.length > 0;
+
   return (
     <div className="p-3 space-y-3 max-w-2xl">
       <div>
         <h1 className="text-xl font-bold">Settings</h1>
         <p className="text-xs text-muted-foreground">
-          Admin password, attendance time, location aur Google Sheets
+          Admin Face Scan, Password, attendance time, location aur Google Sheets
         </p>
       </div>
+
+      {/* Admin Face Scan Login */}
+      <Card className="p-4 space-y-3 border border-primary/20 bg-primary/5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="size-4 text-primary" />
+            <h2 className="font-semibold text-sm">Admin Face Scan Login</h2>
+          </div>
+          <span
+            className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              hasFace
+                ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                : "bg-amber-500/20 text-amber-600 dark:text-amber-400"
+            }`}
+          >
+            {hasFace ? "Registered (Active)" : "Not Registered"}
+          </span>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          Apna chehra scan karke register karein taaki bina password type kiye direct Face Scan se
+          Admin Login ho sake.
+        </p>
+
+        <div className="flex items-center gap-2 flex-wrap pt-1">
+          <Button
+            onClick={() => setFaceDialogOpen(true)}
+            size="sm"
+            className="flex items-center gap-1.5"
+          >
+            <Camera className="size-3.5" />
+            {hasFace ? "Re-scan / Update Face" : "Register Admin Face"}
+          </Button>
+          {hasFace && (
+            <Button
+              onClick={removeAdminFace}
+              variant="outline"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10 flex items-center gap-1.5"
+            >
+              <Trash2 className="size-3.5" />
+              Remove Face Scan
+            </Button>
+          )}
+        </div>
+      </Card>
 
       {/* Admin Password */}
       <Card className="p-4 space-y-3">
         <div className="flex items-center gap-2">
           <KeyRound className="size-4 text-primary" />
-          <h2 className="font-semibold text-sm">Admin Password</h2>
+          <h2 className="font-semibold text-sm">Admin Login Password</h2>
         </div>
-        <div className="bg-accent/40 rounded-md p-2.5 text-xs flex gap-2">
-          <Info className="size-3.5 mt-0.5 shrink-0 text-primary" />
-          <div>
-            Formula: <span className="font-mono">DDMM + SECRET</span> &nbsp;|&nbsp; Secret:{" "}
-            <b>{currentSecret}</b> &nbsp;|&nbsp; Aaj ka password:{" "}
-            <span className="font-mono font-bold">
-              {ddmm}
-              {currentSecret}
-            </span>
-          </div>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          Supabase mein saved yahi password login screen par use hoga.
+        </p>
         <div className="flex gap-2 items-end">
           <div className="flex-1">
-            <Label className="text-xs">New Secret Word</Label>
-            <Input
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-              placeholder="e.g. MANOJ"
-              className="h-8 text-sm"
-            />
+            <Label className="text-xs">New Password</Label>
+            <div className="relative mt-1">
+              <Input
+                type={showPassword ? "text" : "password"}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Enter new password"
+                className="h-9 text-sm pr-9"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
+            </div>
           </div>
-          <Button onClick={saveSecret} disabled={secret.length < 2} size="sm">
-            Update
+          <Button
+            onClick={savePassword}
+            disabled={newPassword.trim().length < 2}
+            size="sm"
+            className="h-9"
+          >
+            Save Password
           </Button>
         </div>
       </Card>
@@ -448,6 +522,12 @@ function SettingsPage() {
           </div>
         </div>
       </Card>
+
+      <AdminFaceEnrollDialog
+        open={faceDialogOpen}
+        onOpenChange={setFaceDialogOpen}
+        onEnrolled={reload}
+      />
     </div>
   );
 }

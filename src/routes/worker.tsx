@@ -25,6 +25,7 @@ import {
   newId,
   normalizeDate,
   useCloudSync,
+  hydrate,
   type Employee,
 } from "@/lib/store";
 import { captureStableDescriptor, loadModels, identifyLive } from "@/lib/face-recognition";
@@ -104,6 +105,7 @@ function WorkerPage() {
   useEffect(
     () => {
       setMounted(true);
+      hydrate(true).catch(() => {});
       loadModels().catch(() => {});
       warmupLocation();
       const h = new Date().getHours();
@@ -347,7 +349,7 @@ function WorkerPage() {
         ...enrollCandidate,
         face_descriptor: Array.from(descriptor),
       };
-      upsertEmployee(updated);
+      await upsertEmployee(updated);
       stopCamera();
       setIdentified(updated);
       toast.success("✅ Face register ho gaya!");

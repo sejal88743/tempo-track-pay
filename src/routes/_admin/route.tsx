@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { isAdminLoggedIn, useSyncStatus, forceCloudSync } from "@/lib/store";
+import { isAdminLoggedIn } from "@/lib/store";
 import {
   LayoutDashboard,
   Users,
@@ -14,11 +14,7 @@ import {
   LogOut,
   Menu,
   X,
-  RefreshCw,
-  Wifi,
-  WifiOff,
 } from "lucide-react";
-import { toast } from "sonner";
 
 export const Route = createFileRoute("/_admin")({
   // No SSR auth check — avoids hydration mismatch; client useEffect handles redirect
@@ -40,17 +36,6 @@ function AdminLayout() {
   const loc = useLocation();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [isManualSyncing, setIsManualSyncing] = useState(false);
-  const rawSyncInfo = useSyncStatus();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const syncInfo = mounted
-    ? rawSyncInfo
-    : { status: "syncing" as const, lastSyncedAt: null, pendingCount: 0 };
 
   // Client-side auth guard — avoids SSR/client hydration mismatch
   useEffect(() => {
@@ -59,22 +44,6 @@ function AdminLayout() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const handleSyncNow = async () => {
-    setIsManualSyncing(true);
-    try {
-      const res = await forceCloudSync();
-      if (res.success) {
-        toast.success(`✅ Live Data Synced (${res.lastSyncedAt || "Now"})`);
-      } else {
-        toast.error("Sync error, retrying in background...");
-      }
-    } catch {
-      toast.error("Sync error");
-    } finally {
-      setIsManualSyncing(false);
-    }
-  };
 
   // Auto attendance rules: Sunday rule + 7 PM auto-absent (har 5 min check)
   useEffect(() => {
@@ -143,44 +112,11 @@ function AdminLayout() {
           })}
         </nav>
 
-        {/* Right actions & Live Sync Status */}
-        <div className="ml-auto flex items-center gap-1.5">
-          {/* Live Sync Badge & Button */}
-          <button
-            onClick={handleSyncNow}
-            disabled={isManualSyncing}
-            title={
-              syncInfo.status === "connected"
-                ? `🟢 Live Cloud Connected (Synced at ${syncInfo.lastSyncedAt || "just now"}) — Click to refresh`
-                : syncInfo.status === "syncing" || isManualSyncing
-                  ? "Syncing latest data..."
-                  : "🔴 Offline / Reconnecting — Click to retry"
-            }
-            className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px] bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-border transition-colors border border-sidebar-border"
-          >
-            {isManualSyncing || syncInfo.status === "syncing" ? (
-              <RefreshCw className="size-3 animate-spin text-amber-400" />
-            ) : syncInfo.status === "connected" ? (
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-            ) : (
-              <WifiOff className="size-3 text-rose-400" />
-            )}
-            <span className="hidden sm:inline font-mono">
-              {isManualSyncing || syncInfo.status === "syncing"
-                ? "Syncing..."
-                : syncInfo.status === "connected"
-                  ? "Live"
-                  : "Offline"}
-            </span>
-            <RefreshCw className={`size-3 ${isManualSyncing ? "animate-spin" : "opacity-60"}`} />
-          </button>
-
+        {/* Right actions */}
+        <div className="ml-auto flex items-center gap-2">
           <Link
             to="/worker"
-            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs bg-primary/20 text-primary hover:bg-primary/30 font-medium"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs bg-primary/20 text-primary hover:bg-primary/30 font-medium"
           >
             <ClipboardCheck className="size-3.5" /> Worker
           </Link>
@@ -211,13 +147,6 @@ function AdminLayout() {
                   <div className="text-xs opacity-50">Admin Panel</div>
                 </div>
               </div>
-              <button
-                onClick={handleSyncNow}
-                className="p-1.5 rounded hover:bg-sidebar-accent text-sidebar-foreground/70"
-                title="Sync now"
-              >
-                <RefreshCw className={`size-4 ${isManualSyncing ? "animate-spin" : ""}`} />
-              </button>
             </div>
             <nav className="flex-1 px-2 py-2 space-y-0.5 overflow-y-auto">
               {NAV.map((n) => {
@@ -241,12 +170,6 @@ function AdminLayout() {
               })}
             </nav>
             <div className="p-2 border-t border-sidebar-border space-y-1">
-              <div className="px-3 py-1.5 text-[11px] text-sidebar-foreground/60 flex items-center justify-between">
-                <span>Sync Status:</span>
-                <span className="text-emerald-400 font-semibold">
-                  {syncInfo.status === "connected" ? "Live Connected" : syncInfo.status}
-                </span>
-              </div>
               <Link
                 to="/worker"
                 onClick={() => setMenuOpen(false)}
@@ -259,7 +182,7 @@ function AdminLayout() {
                   setMenuOpen(false);
                   navigate({ to: "/logout" });
                 }}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm bg-sidebar-accent text-sidebar-accent-foreground hover:opacity-90"
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-destructive hover:bg-destructive/10"
               >
                 <LogOut className="size-4" /> Logout
               </button>

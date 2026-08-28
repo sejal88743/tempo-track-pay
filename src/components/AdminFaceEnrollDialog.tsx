@@ -7,22 +7,21 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Camera, Loader2, SwitchCamera } from "lucide-react";
+import { Camera, Loader2, SwitchCamera, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
-import { type Employee, upsertEmployee } from "@/lib/store";
+import { updateSettings } from "@/lib/store";
 import { loadModels, captureStableDescriptor } from "@/lib/face-recognition";
 
 type Facing = "user" | "environment";
 
-export function BiometricEnrollDialog({
-  employee,
+export function AdminFaceEnrollDialog({
   open,
   onOpenChange,
+  onEnrolled,
 }: {
-  employee: Employee | null;
-  mode?: string; // kept for compat, ignored
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  onEnrolled?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -38,7 +37,7 @@ export function BiometricEnrollDialog({
   }, []);
 
   useEffect(() => {
-    if (!open || !employee) return;
+    if (!open) return;
     let cancelled = false;
     (async () => {
       try {
@@ -58,17 +57,17 @@ export function BiometricEnrollDialog({
           setStreamReady(true);
         }
       } catch (e) {
-        toast.error("Camera nahi mila: " + (e as Error).message);
+        toast.error("Camera access nahi mila: " + (e as Error).message);
       }
     })();
     return () => {
       cancelled = true;
       stop();
     };
-  }, [open, employee, facing, stop]);
+  }, [open, facing, stop]);
 
-  const doFace = async () => {
-    if (!employee || !videoRef.current) return;
+  const doCapture = async () => {
+    if (!videoRef.current) return;
     setBusy(true);
     setProgress({ done: 0, total: 3 });
     try {
@@ -79,11 +78,14 @@ export function BiometricEnrollDialog({
         toast.error("Face detect nahi hua. Achchi roshni mein seedha camera ki taraf dekhein.");
         return;
       }
-      await upsertEmployee({ ...employee, face_descriptor: Array.from(desc) });
-      toast.success(`✓ ${employee.full_name} ka face register ho gaya`);
+      await updateSettings({ admin_face_descriptor: Array.from(desc) });
+      toast.success(
+        "✅ Admin Face Scan successfully register ho gaya! Ab aap face scan se login kar sakte hain.",
+      );
       onOpenChange(false);
+      onEnrolled?.();
     } catch (e) {
-      toast.error("Capture failed: " + (e as Error).message);
+      toast.error("Face registration failed: " + (e as Error).message);
     } finally {
       setBusy(false);
       setProgress(null);
@@ -94,7 +96,10 @@ export function BiometricEnrollDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Face Register — {employee?.full_name}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <ShieldCheck className="size-5 text-primary" />
+            Admin Face Scan Register Karein
+          </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div
@@ -116,7 +121,7 @@ export function BiometricEnrollDialog({
             )}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div
-                className="border-2 border-white/50 border-dashed rounded-full"
+                className="border-2 border-primary/70 border-dashed rounded-full"
                 style={{ width: "55%", height: "70%" }}
               />
             </div>
@@ -142,21 +147,21 @@ export function BiometricEnrollDialog({
               </div>
             )}
           </div>
-          <p className="text-sm text-muted-foreground text-center">
-            Oval ke andar seedha chehra laayein — 3 samples liye jaate hain
+          <p className="text-xs text-muted-foreground text-center">
+            Circle ke andar seedha chehra laayein. Camera 3 clear samples capture karega.
           </p>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={doFace} disabled={busy || !streamReady}>
+          <Button onClick={doCapture} disabled={busy || !streamReady}>
             {busy ? (
               <Loader2 className="size-4 mr-1 animate-spin" />
             ) : (
               <Camera className="size-4 mr-1" />
             )}
-            Face Capture Karein
+            Admin Face Save Karein
           </Button>
         </DialogFooter>
       </DialogContent>
