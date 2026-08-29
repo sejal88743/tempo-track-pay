@@ -121,6 +121,10 @@ function SettingsPage() {
     setSyncLoading(true);
     try {
       const res = await createMasterSpreadsheet({ data: { title: "Transport Staff" } });
+      if (!res.ok || !res.spreadsheetId) {
+        toast.error(res.error || "Sheets integration configure nahi hai");
+        return;
+      }
       await updateSettings({
         spreadsheet_id: res.spreadsheetId,
         sheets_url: res.url,
@@ -276,46 +280,12 @@ function SettingsPage() {
         </div>
       </Card>
 
-      {/* Evening Attendance Toggle */}
-      <Card className="p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-base">🌙</span>
-            <div>
-              <h2 className="font-semibold text-sm">Evening Attendance</h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {settings.evening_enabled
-                  ? "ON — Workers morning + evening dono mark kar sakte hain"
-                  : "OFF — Sirf morning attendance hogi (ek baar)"}
-              </p>
-            </div>
-          </div>
-          <div
-            onClick={() => {
-              const newVal = !(settings.evening_enabled ?? false);
-              updateSettings({ evening_enabled: newVal });
-              toast.success(newVal ? "🌙 Evening attendance ON" : "✅ Sirf morning attendance");
-              reload();
-            }}
-            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer shrink-0 ${
-              settings.evening_enabled ? "bg-primary" : "bg-muted"
-            }`}
-          >
-            <span
-              className={`inline-block size-4 rounded-full bg-white shadow transition-transform ${
-                settings.evening_enabled ? "translate-x-6" : "translate-x-1"
-              }`}
-            />
-          </div>
-        </div>
-      </Card>
-
       {/* Attendance Time Schedule */}
       <Card className="p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Clock className="size-4 text-primary" />
-            <h2 className="font-semibold text-sm">Attendance Time Schedule</h2>
+            <h2 className="font-semibold text-sm">Daily Attendance Time Schedule</h2>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
             <span className="text-xs text-muted-foreground">Enforce</span>
@@ -336,62 +306,35 @@ function SettingsPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <div className="text-xs font-medium text-orange-600">🌅 Morning Shift</div>
-            <div className="flex items-center gap-2">
-              <div className="flex-1">
-                <Label className="text-xs text-muted-foreground">Start</Label>
-                <Input
-                  type="time"
-                  value={schedule.morning_start}
-                  onChange={(e) => setSchedule((s) => ({ ...s, morning_start: e.target.value }))}
-                  className="h-8 text-sm"
-                />
-              </div>
-              <div className="mt-5 text-muted-foreground text-xs">to</div>
-              <div className="flex-1">
-                <Label className="text-xs text-muted-foreground">End</Label>
-                <Input
-                  type="time"
-                  value={schedule.morning_end}
-                  onChange={(e) => setSchedule((s) => ({ ...s, morning_end: e.target.value }))}
-                  className="h-8 text-sm"
-                />
-              </div>
+        <div className="space-y-2">
+          <div className="text-xs font-medium text-primary">🌅 Daily Attendance Time</div>
+          <div className="flex items-center gap-2 max-w-sm">
+            <div className="flex-1">
+              <Label className="text-xs text-muted-foreground">Start</Label>
+              <Input
+                type="time"
+                value={schedule.morning_start}
+                onChange={(e) => setSchedule((s) => ({ ...s, morning_start: e.target.value }))}
+                className="h-8 text-sm"
+              />
             </div>
-          </div>
-
-          <div className="space-y-2">
-            <div className="text-xs font-medium text-blue-600">🌙 Evening Shift</div>
-            <div className="flex items-center gap-2">
-              <div className="flex-1">
-                <Label className="text-xs text-muted-foreground">Start</Label>
-                <Input
-                  type="time"
-                  value={schedule.evening_start}
-                  onChange={(e) => setSchedule((s) => ({ ...s, evening_start: e.target.value }))}
-                  className="h-8 text-sm"
-                />
-              </div>
-              <div className="mt-5 text-muted-foreground text-xs">to</div>
-              <div className="flex-1">
-                <Label className="text-xs text-muted-foreground">End</Label>
-                <Input
-                  type="time"
-                  value={schedule.evening_end}
-                  onChange={(e) => setSchedule((s) => ({ ...s, evening_end: e.target.value }))}
-                  className="h-8 text-sm"
-                />
-              </div>
+            <div className="mt-5 text-muted-foreground text-xs">to</div>
+            <div className="flex-1">
+              <Label className="text-xs text-muted-foreground">End</Label>
+              <Input
+                type="time"
+                value={schedule.morning_end}
+                onChange={(e) => setSchedule((s) => ({ ...s, morning_end: e.target.value }))}
+                className="h-8 text-sm"
+              />
             </div>
           </div>
         </div>
 
         <div className="text-xs text-muted-foreground bg-muted/40 rounded p-2">
-          Default: Morning 08:30–09:30 &nbsp;|&nbsp; Evening 17:00–18:00
+          Default: 08:30–09:30
           <br />
-          Enforce OFF rahega to worker kabhi bhi attendance mark kar sakta hai.
+          Enforce OFF rahega to worker din me kisi bhi time attendance mark kar sakta hai.
         </div>
 
         <Button onClick={saveSchedule} size="sm" className="w-full">

@@ -141,7 +141,12 @@ export async function syncAll() {
   if (!s.spreadsheet_id) throw new Error("Spreadsheet ID set nahi hai.");
   const tabs: Tab[] = ["Employees", "Attendance", "Salary", "Leaves", "Advances", "Tempos"];
   for (const tab of tabs) {
-    await syncTabToSheet({ data: { spreadsheetId: s.spreadsheet_id, tab, rows: rowsFor(tab) } });
+    const res = await syncTabToSheet({
+      data: { spreadsheetId: s.spreadsheet_id, tab, rows: rowsFor(tab) },
+    });
+    if (res && "error" in res && res.error) {
+      throw new Error(res.error);
+    }
   }
   const { updateSettings } = await import("./store");
   updateSettings({ last_synced: new Date().toISOString() });

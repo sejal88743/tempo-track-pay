@@ -49,6 +49,8 @@ import {
   normalizeDate,
   useCloudSync,
   hydrate,
+  fetchAttendanceForMonth,
+  fetchAttendanceForYear,
   type AttendanceRecord,
 } from "@/lib/store";
 import { useSortable, SortHeader } from "@/lib/use-sort";
@@ -125,6 +127,7 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
   // Fetch latest live cloud data on mount and month changes
   useEffect(() => {
     void hydrate(true);
+    void fetchAttendanceForMonth(month);
   }, [month]);
 
   const emps = useMemo(() => {
@@ -892,6 +895,10 @@ function DailyReport({ date }: { date: string }) {
   const [selectedDailyIds, setSelectedDailyIds] = useState<Set<string>>(new Set());
   const [isDailySaving, setIsDailySaving] = useState(false);
 
+  useEffect(() => {
+    void hydrate(true);
+  }, [date]);
+
   const emps = useMemo(
     () => getEmployees().filter((e) => e.active !== false),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1473,6 +1480,7 @@ function YearlyAttendanceReport({ year, onSelectMonth }: YearlyAttendanceReportP
 
   useEffect(() => {
     void hydrate(true);
+    void fetchAttendanceForYear(year);
   }, [year]);
 
   const emps = useMemo(() => {

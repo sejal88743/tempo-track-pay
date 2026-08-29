@@ -51,82 +51,100 @@ export const createMasterSpreadsheet = createServerFn({ method: "POST" })
     z.object({ title: z.string().min(1).max(200).default("Transport Staff") }).parse(d),
   )
   .handler(async ({ data }) => {
-    const result = await gw("/spreadsheets", {
-      method: "POST",
-      body: {
-        properties: { title: data.title },
-        sheets: TABS.map((t) => ({ properties: { title: t } })),
-      },
-    });
-    const spreadsheetId = result.spreadsheetId as string;
-    await gw(`/spreadsheets/${spreadsheetId}/values:batchUpdate`, {
-      method: "POST",
-      body: {
-        valueInputOption: "USER_ENTERED",
-        data: [
-          {
-            range: "Employees!A1:I1",
-            values: [
-              [
-                "ID",
-                "Name",
-                "Role",
-                "Monthly Salary",
-                "Joining",
-                "Mobile",
-                "Active",
-                "Fingerprint",
-                "Face",
+    try {
+      const keys = getApiKeysOptional();
+      if (!keys) {
+        throw new Error(
+          "Google Sheets integration is not configured. LOVABLE_API_KEY and GOOGLE_SHEETS_API_KEY are required.",
+        );
+      }
+      const result = await gw("/spreadsheets", {
+        method: "POST",
+        body: {
+          properties: { title: data.title },
+          sheets: TABS.map((t) => ({ properties: { title: t } })),
+        },
+      });
+      const spreadsheetId = result.spreadsheetId as string;
+      await gw(`/spreadsheets/${spreadsheetId}/values:batchUpdate`, {
+        method: "POST",
+        body: {
+          valueInputOption: "USER_ENTERED",
+          data: [
+            {
+              range: "Employees!A1:I1",
+              values: [
+                [
+                  "ID",
+                  "Name",
+                  "Role",
+                  "Monthly Salary",
+                  "Joining",
+                  "Mobile",
+                  "Active",
+                  "Fingerprint",
+                  "Face",
+                ],
               ],
-            ],
-          },
-          {
-            range: "Attendance!A1:I1",
-            values: [
-              ["ID", "Employee ID", "Name", "Date", "Shift", "Status", "In", "Out", "Method"],
-            ],
-          },
-          {
-            range: "Salary!A1:P1",
-            values: [
-              [
-                "ID",
-                "Employee ID",
-                "Name",
-                "Month",
-                "Days",
-                "Present",
-                "Absent",
-                "Paid Leave",
-                "Unpaid",
-                "Per Day",
-                "Gross",
-                "Advance",
-                "Leave Deduct",
-                "Bonus",
-                "Penalty",
-                "Final",
+            },
+            {
+              range: "Attendance!A1:I1",
+              values: [
+                ["ID", "Employee ID", "Name", "Date", "Shift", "Status", "In", "Out", "Method"],
               ],
-            ],
-          },
-          {
-            range: "Leaves!A1:H1",
-            values: [["ID", "Employee ID", "Name", "Type", "From", "To", "Reason", "Status"]],
-          },
-          {
-            range: "Advances!A1:H1",
-            values: [
-              ["ID", "Employee ID", "Name", "Amount", "Reason", "Date", "Status", "Deducted"],
-            ],
-          },
-          {
-            range: "Tempos!A1:C1",
-            values: [["ID", "Vehicle Number", "Active"]],
-          },
-        ],
-      },
-    });
-    return { spreadsheetId, url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}` };
+            },
+            {
+              range: "Salary!A1:P1",
+              values: [
+                [
+                  "ID",
+                  "Employee ID",
+                  "Name",
+                  "Month",
+                  "Days",
+                  "Present",
+                  "Absent",
+                  "Paid Leave",
+                  "Unpaid",
+                  "Per Day",
+                  "Gross",
+                  "Advance",
+                  "Leave Deduct",
+                  "Bonus",
+                  "Penalty",
+                  "Final",
+                ],
+              ],
+            },
+            {
+              range: "Leaves!A1:H1",
+              values: [["ID", "Employee ID", "Name", "Type", "From", "To", "Reason", "Status"]],
+            },
+            {
+              range: "Advances!A1:H1",
+              values: [
+                ["ID", "Employee ID", "Name", "Amount", "Reason", "Date", "Status", "Deducted"],
+              ],
+            },
+            {
+              range: "Tempos!A1:C1",
+              values: [["ID", "Vehicle Number", "Active"]],
+            },
+          ],
+        },
+      });
+      return {
+        ok: true,
+        spreadsheetId,
+        url: `https://docs.google.com/spreadsheets/d/${spreadsheetId}`,
+      };
+    } catch (err) {
+      console.warn("[createMasterSpreadsheet error]", err);
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   });
 
 const syncSchema = z.object({
@@ -138,19 +156,29 @@ const syncSchema = z.object({
 export const syncTabToSheet = createServerFn({ method: "POST" })
   .inputValidator((d) => syncSchema.parse(d))
   .handler(async ({ data }) => {
-    const keys = getApiKeysOptional();
-    if (!keys) {
-      return { ok: false, count: 0, skipped: true, reason: "Sheets API not configured" };
+    try {
+      const keys = getApiKeysOptional();
+      if (!keys) {
+        return { ok: false, count: 0, skipped: true, reason: "Sheets API not configured" };
+      }
+      await gw(`/spreadsheets/${data.spreadsheetId}/values/${data.tab}!A2:Z:clear`, {
+        method: "POST",
+        body: {},
+      });
+      if (!data.rows.length) return { ok: true, count: 0 };
+      const endCol = String.fromCharCode(64 + Math.min(data.rows[0].length, 26));
+      await gw(
+        `/spreadsheets/${data.spreadsheetId}/values/${data.tab}!A2:${endCol}${data.rows.length + 1}?valueInputOption=USER_ENTERED`,
+        { method: "PUT", body: { values: data.rows } },
+      );
+      return { ok: true, count: data.rows.length };
+    } catch (err) {
+      console.warn("[syncTabToSheet error]", err);
+      return {
+        ok: false,
+        count: 0,
+        skipped: true,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
-    await gw(`/spreadsheets/${data.spreadsheetId}/values/${data.tab}!A2:Z:clear`, {
-      method: "POST",
-      body: {},
-    });
-    if (!data.rows.length) return { ok: true, count: 0 };
-    const endCol = String.fromCharCode(64 + Math.min(data.rows[0].length, 26));
-    await gw(
-      `/spreadsheets/${data.spreadsheetId}/values/${data.tab}!A2:${endCol}${data.rows.length + 1}?valueInputOption=USER_ENTERED`,
-      { method: "PUT", body: { values: data.rows } },
-    );
-    return { ok: true, count: data.rows.length };
   });

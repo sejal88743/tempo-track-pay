@@ -67,9 +67,6 @@ function AttendancePage() {
   const [nameSearch, setNameSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
-  const settings = getSettings();
-  const eveningEnabled = settings.evening_enabled ?? false;
-  const [shift, setShift] = useState<"morning" | "evening">("morning");
 
   const normalizedCurrentDate = normalizeDate(date) || todayISO();
   const isSelectedSunday = isSunday(normalizedCurrentDate);
@@ -94,15 +91,13 @@ function AttendancePage() {
   const attMap = useMemo(() => {
     const m = new Map<string, AttendanceRecord>();
     attRecords.forEach((r) => {
-      if (!eveningEnabled || r.shift === shift) {
-        const prev = m.get(r.employee_id);
-        if (!prev || r.status === "present" || r.status === "late") {
-          m.set(r.employee_id, r);
-        }
+      const prev = m.get(r.employee_id);
+      if (!prev || r.status === "present" || r.status === "late") {
+        m.set(r.employee_id, r);
       }
     });
     return m;
-  }, [attRecords, shift, eveningEnabled]);
+  }, [attRecords]);
 
   const update = async (employee_id: string, patch: Partial<AttendanceRecord>) => {
     const norm = normalizeDate(date) || todayISO();
@@ -110,13 +105,14 @@ function AttendancePage() {
       id: newId(),
       employee_id,
       date: norm,
-      shift,
+      shift: "morning" as const,
       status: "present" as const,
     };
     const next = {
       ...cur,
       ...patch,
       date: norm,
+      shift: "morning" as const,
       method: patch.method ?? "manual",
       marked_by: "admin",
     } as AttendanceRecord;
@@ -148,7 +144,7 @@ function AttendancePage() {
         id: cur?.id ?? newId(),
         employee_id: e.id,
         date: norm,
-        shift,
+        shift: "morning",
         status: "present",
         in_time: cur?.in_time ?? new Date().toISOString(),
         method: "manual",
@@ -173,7 +169,7 @@ function AttendancePage() {
         id: cur?.id ?? newId(),
         employee_id: e.id,
         date: norm,
-        shift,
+        shift: "morning",
         status: "absent",
         method: "manual",
         marked_by: "admin",
@@ -198,7 +194,7 @@ function AttendancePage() {
         id: cur?.id ?? newId(),
         employee_id: e.id,
         date: norm,
-        shift,
+        shift: "morning",
         status: "present",
         in_time: cur?.in_time ?? new Date().toISOString(),
         method: "manual",
@@ -225,7 +221,7 @@ function AttendancePage() {
         id: cur?.id ?? newId(),
         employee_id: e.id,
         date: norm,
-        shift,
+        shift: "morning",
         status: "absent",
         method: "manual",
         marked_by: "admin",
@@ -462,25 +458,6 @@ function AttendancePage() {
           >
             <Calendar className="size-3 mr-1" /> Aaj
           </Button>
-        )}
-
-        {/* Shift toggle */}
-        {eveningEnabled && (
-          <div className="flex gap-1 ml-2">
-            {(["morning", "evening"] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => setShift(s)}
-                className={`px-3 py-1 rounded-full text-xs font-semibold transition-all border ${
-                  shift === s
-                    ? "bg-primary text-white border-primary"
-                    : "border-border text-muted-foreground hover:bg-muted"
-                }`}
-              >
-                {s === "morning" ? "🌅 Morning" : "🌙 Evening"}
-              </button>
-            ))}
-          </div>
         )}
       </div>
 

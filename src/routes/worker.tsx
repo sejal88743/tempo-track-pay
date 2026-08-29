@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import {
   Truck,
@@ -12,6 +13,9 @@ import {
   Loader2,
   ChevronRight,
   SwitchCamera,
+  Calendar,
+  Search,
+  Users,
 } from "lucide-react";
 
 import {
@@ -44,7 +48,6 @@ function WorkerPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>("scan");
   const [identified, setIdentified] = useState<Employee | null>(null);
-  const [shift, setShift] = useState<"morning" | "evening">("morning");
   const [loading, setLoading] = useState(false);
   const [enrollCandidate, setEnrollCandidate] = useState<Employee | null>(null);
   // GPS status — always mandatory, no toast ever shown
@@ -65,6 +68,8 @@ function WorkerPage() {
   // Monthly attendance count shown on done screen
   const [monthCount, setMonthCount] = useState<{ present: number; total: number } | null>(null);
   const [showMonthDetail, setShowMonthDetail] = useState(false);
+  const [showWorkerLookup, setShowWorkerLookup] = useState(false);
+  const [lookupSearch, setLookupSearch] = useState("");
   const [blockedEmp, setBlockedEmp] = useState<Employee | null>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -75,11 +80,8 @@ function WorkerPage() {
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const settings = getSettings();
-  const eveningEnabled = settings.evening_enabled ?? false;
 
   // Silent GPS check — runs on mount and on retry.
-  // Always returns the resolved status so callers can gate on the result
-  // instead of reading potentially-stale React state.
   const checkGps = useCallback(async (): Promise<"ok" | "denied" | "outside"> => {
     setGpsStatus("checking");
     try {
@@ -108,9 +110,6 @@ function WorkerPage() {
       hydrate(true).catch(() => {});
       loadModels().catch(() => {});
       warmupLocation();
-      const h = new Date().getHours();
-      setShift(eveningEnabled && h >= 14 ? "evening" : "morning");
-
       checkGps();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -367,9 +366,7 @@ function WorkerPage() {
   const markAttendance = async (emp: Employee) => {
     const today = todayString();
     const now = new Date().toISOString();
-    const existing = getAttendanceForDate(today).find(
-      (r) => r.employee_id === emp.id && r.shift === shift,
-    );
+    const existing = getAttendanceForDate(today).find((r) => r.employee_id === emp.id);
     // Admin ne aaj is worker ko ABSENT mark kiya ho to worker khud attendance nahi laga sakta.
     if (existing && existing.status === "absent" && existing.marked_by === "admin") {
       setBlockedEmp(emp);
@@ -390,7 +387,7 @@ function WorkerPage() {
       id: existing?.id ?? newId(),
       employee_id: emp.id,
       date: today,
-      shift,
+      shift: "morning",
       status: "present",
       in_time: existing?.in_time ?? now,
       out_time: now,
@@ -572,25 +569,6 @@ function WorkerPage() {
               )}
             </div>
 
-            {/* Shift toggle — only if evening enabled */}
-            {eveningEnabled && (
-              <div className="flex gap-2 justify-center">
-                {(["morning", "evening"] as const).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setShift(s)}
-                    className={`px-5 py-2 rounded-full text-sm font-semibold transition-all ${
-                      shift === s
-                        ? "bg-primary text-white shadow-lg"
-                        : "bg-white/10 text-white/60 hover:bg-white/20"
-                    }`}
-                  >
-                    {s === "morning" ? "🌅 Morning" : "🌙 Evening"}
-                  </button>
-                ))}
-              </div>
-            )}
-
             {/* Face Scan button */}
             <button
               onClick={handleFaceScan}
@@ -603,12 +581,21 @@ function WorkerPage() {
               </div>
               <div>
                 <div className="text-white font-bold text-xl">Face Scan</div>
-                <div className="text-white/70 text-sm mt-0.5">
-                  {eveningEnabled
-                    ? `${shift === "morning" ? "🌅 Morning" : "🌙 Evening"} attendance`
-                    : "🌅 Morning attendance"}
-                </div>
+                <div className="text-white/70 text-sm mt-0.5">🌅 Daily Attendance</div>
               </div>
+            </button>
+
+            {/* Worker Self-Lookup Button */}
+            <button
+              onClick={() => {
+                hydrate(true).catch(() => {});
+                setShowWorkerLookup(true);
+              }}
+              className="w-full bg-white/10 hover:bg-white/15 active:scale-95 border border-white/15
+                         rounded-xl p-3.5 flex items-center justify-center gap-2 text-white/90 text-sm font-medium transition-all"
+            >
+              <Calendar className="size-4 text-emerald-400" />
+              <span>Apni Attendance / Record Check Karein</span>
             </button>
           </div>
         )}
@@ -798,7 +785,7 @@ function WorkerPage() {
                 <p className="text-white/50 text-sm">Face match hua</p>
                 <h3 className="text-2xl font-bold text-white mt-1">{identified.full_name}</h3>
                 <p className="text-white/40 text-sm mt-1">
-                  {identified.role} • {shift === "morning" ? "🌅 Morning" : "🌙 Evening"}
+                  {identified.role} • 🌅 Daily Attendance
                 </p>
                 {matchInfo && (
                   <p className="text-white/30 text-xs mt-2">
@@ -855,7 +842,7 @@ function WorkerPage() {
                   {identified.full_name}
                 </p>
                 <p className="text-white/40 text-sm mt-1">
-                  {shift === "morning" ? "🌅 Morning" : "🌙 Evening"} &nbsp;•&nbsp;
+                  🌅 Daily Attendance &nbsp;•&nbsp;
                   {new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
                 </p>
               </div>
@@ -888,6 +875,103 @@ function WorkerPage() {
           </div>
         )}
       </div>
+
+      {/* ── WORKER LOOKUP POPUP (Check attendance anytime) ───────────────────── */}
+      {showWorkerLookup && (
+        <div className="fixed inset-0 bg-black/85 flex items-end sm:items-center justify-center p-3 z-50">
+          <div className="bg-slate-800 rounded-2xl w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden shadow-2xl border border-white/10">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="size-5 text-emerald-400" />
+                <div>
+                  <h3 className="text-white font-bold text-base">Apna Record Dekhein</h3>
+                  <p className="text-white/50 text-xs">
+                    Apna naam select karke live attendance check karein
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-white/60 hover:text-white"
+                onClick={() => setShowWorkerLookup(false)}
+              >
+                ✕
+              </Button>
+            </div>
+
+            <div className="p-3 border-b border-white/10">
+              <div className="relative">
+                <Search className="size-4 text-white/40 absolute left-3 top-2.5" />
+                <Input
+                  placeholder="Naam khojein (e.g. Abbas, Amir)..."
+                  value={lookupSearch}
+                  onChange={(e) => setLookupSearch(e.target.value)}
+                  className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-white/30 h-9"
+                />
+              </div>
+            </div>
+
+            <div className="p-3 overflow-y-auto space-y-2 flex-1 max-h-[50vh]">
+              {getEmployees()
+                .filter(
+                  (e) => e.active && e.full_name.toLowerCase().includes(lookupSearch.toLowerCase()),
+                )
+                .map((emp) => {
+                  const todayRec = getAttendanceForDate(todayString()).find(
+                    (r) => r.employee_id === emp.id,
+                  );
+                  const isPresentToday =
+                    todayRec && (todayRec.status === "present" || todayRec.status === "late");
+                  const isAbsentToday = todayRec && todayRec.status === "absent";
+
+                  return (
+                    <button
+                      key={emp.id}
+                      onClick={() => {
+                        setIdentified(emp);
+                        setShowWorkerLookup(false);
+                        setShowMonthDetail(true);
+                      }}
+                      className="w-full text-left p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-between transition-all"
+                    >
+                      <div>
+                        <div className="text-white font-semibold text-sm">{emp.full_name}</div>
+                        <div className="text-white/40 text-xs capitalize">{emp.role}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {isPresentToday ? (
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-500/20 text-green-400 border border-green-500/30">
+                            Aaj: Present (1)
+                          </span>
+                        ) : isAbsentToday ? (
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-500/20 text-red-400 border border-red-500/30">
+                            Aaj: Absent (0)
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white/10 text-white/50 border border-white/10">
+                            Baki Hai
+                          </span>
+                        )}
+                        <ChevronRight className="size-4 text-white/30" />
+                      </div>
+                    </button>
+                  );
+                })}
+            </div>
+
+            <div className="p-3 border-t border-white/10">
+              <Button
+                className="w-full"
+                variant="secondary"
+                onClick={() => setShowWorkerLookup(false)}
+              >
+                Band Karein
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── MONTH DETAIL POPUP (date-wise 1/0 + salary) ─────────────────────── */}
       {showMonthDetail &&

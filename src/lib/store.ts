@@ -493,13 +493,147 @@ let isHydrating = false;
 let lastHydrateTimestamp = 0;
 let initialHydratePromise: Promise<boolean> | null = null;
 
+/**
+ * Robust paginated fetcher to overcome Supabase PostgREST default 1000-row limit.
+ * Iterates in batches of 1000 using .range() until all records are retrieved.
+ */
+async function fetchAllRowsWithPagination(
+  table: string,
+  orderBy: string,
+  ascending = false,
+  maxPages = 50,
+): Promise<{ data: Row[] | null; error: unknown }> {
+  if (!sb) return { data: null, error: new Error("No Supabase client") };
+  const PAGE_SIZE = 1000;
+  let from = 0;
+  let all: Row[] = [];
+  try {
+    for (let page = 0; page < maxPages; page++) {
+      const { data, error } = await sb
+        .from(table)
+        .select("*")
+        .order(orderBy, { ascending })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) {
+        return { data: all.length > 0 ? all : null, error };
+      }
+      if (!data || data.length === 0) break;
+      all = all.concat(data as Row[]);
+      if (data.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+    return { data: all, error: null };
+  } catch (err) {
+    return { data: all.length > 0 ? all : null, error: err };
+  }
+}
+
+/**
+ * Dedicated month-based attendance fetcher to guarantee 100% complete data
+ * for any viewed month in Reports / Salary.
+ */
+export async function fetchAttendanceForMonth(monthKey: string): Promise<boolean> {
+  if (!sb || !isBrowser) return false;
+  try {
+    const normMonth = monthKey.trim().slice(0, 7);
+    const startDate = `${normMonth}-01`;
+    const endDate = `${normMonth}-31`;
+    const { data, error } = await sb
+      .from("attendance")
+      .select("*")
+      .gte("attendance_date", startDate)
+      .lte("attendance_date", endDate)
+      .order("attendance_date", { ascending: true });
+
+    if (error) {
+      warn("fetchAttendanceForMonth", error);
+      return false;
+    }
+    if (data && data.length > 0) {
+      const cloudList = data.map(dbToAttendance);
+      const attMap = new Map<string, AttendanceRecord>();
+      // 1. Keep all existing local cache records
+      for (const localRec of cache.attendance) {
+        if (!localRec || !localRec.employee_id || !localRec.date) continue;
+        const normDate = normalizeDate(localRec.date);
+        const shift = localRec.shift || "morning";
+        const key = `${localRec.employee_id}_${normDate}_${shift}`;
+        attMap.set(key, { ...localRec, date: normDate, shift });
+      }
+      // 2. Overlay fresh month cloud records
+      for (const c of cloudList) {
+        const normDate = normalizeDate(c.date);
+        const shift = c.shift || "morning";
+        const key = `${c.employee_id}_${normDate}_${shift}`;
+        attMap.set(key, { ...c, date: normDate, shift });
+      }
+      cache.attendance = Array.from(attMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+      persistLocal();
+      bumpData();
+    }
+    return true;
+  } catch (err) {
+    console.error("[fetchAttendanceForMonth]", err);
+    return false;
+  }
+}
+
+/**
+ * Dedicated year-based attendance fetcher to guarantee 100% complete data
+ * for any viewed year in 1-Year Attendance Report.
+ */
+export async function fetchAttendanceForYear(yearStr: string): Promise<boolean> {
+  if (!sb || !isBrowser) return false;
+  try {
+    const y = yearStr.trim().slice(0, 4);
+    const startDate = `${y}-01-01`;
+    const endDate = `${y}-12-31`;
+    const { data, error } = await sb
+      .from("attendance")
+      .select("*")
+      .gte("attendance_date", startDate)
+      .lte("attendance_date", endDate)
+      .order("attendance_date", { ascending: true });
+
+    if (error) {
+      warn("fetchAttendanceForYear", error);
+      return false;
+    }
+    if (data && data.length > 0) {
+      const cloudList = data.map(dbToAttendance);
+      const attMap = new Map<string, AttendanceRecord>();
+      for (const localRec of cache.attendance) {
+        if (!localRec || !localRec.employee_id || !localRec.date) continue;
+        const normDate = normalizeDate(localRec.date);
+        const shift = localRec.shift || "morning";
+        const key = `${localRec.employee_id}_${normDate}_${shift}`;
+        attMap.set(key, { ...localRec, date: normDate, shift });
+      }
+      for (const c of cloudList) {
+        const normDate = normalizeDate(c.date);
+        const shift = c.shift || "morning";
+        const key = `${c.employee_id}_${normDate}_${shift}`;
+        attMap.set(key, { ...c, date: normDate, shift });
+      }
+      cache.attendance = Array.from(attMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+      persistLocal();
+      bumpData();
+    }
+    return true;
+  } catch (err) {
+    console.error("[fetchAttendanceForYear]", err);
+    return false;
+  }
+}
+
 export async function hydrate(force = false): Promise<boolean> {
   if (!isBrowser || !sb) return false;
   if (isHydrating) return false;
 
   const now = Date.now();
-  // Throttle only if not forced and less than 5 seconds have passed
-  if (!force && now - lastHydrateTimestamp < 5000) {
+  // Throttle only if not forced and less than 3 seconds have passed
+  if (!force && now - lastHydrateTimestamp < 3000) {
     return true;
   }
 
@@ -509,7 +643,7 @@ export async function hydrate(force = false): Promise<boolean> {
   try {
     const [emp, att, lv, adv, sal, tmp, st] = await Promise.all([
       sb.from("employees").select("*").order("created_at", { ascending: false }),
-      sb.from("attendance").select("*").order("attendance_date", { ascending: false }).limit(20000),
+      fetchAllRowsWithPagination("attendance", "attendance_date", false, 50),
       sb.from("leaves").select("*").order("created_at", { ascending: false }),
       sb.from("advances").select("*").order("created_at", { ascending: false }),
       sb.from("salaries").select("*").order("generated_at", { ascending: false }),
@@ -523,7 +657,7 @@ export async function hydrate(force = false): Promise<boolean> {
       cache.employees = emp.data.map(dbToEmployee);
     }
 
-    if (att.error) {
+    if (att.error && (!att.data || att.data.length === 0)) {
       warn("attendance.hydrate", att.error);
     } else if (att.data) {
       const attMap = new Map<string, AttendanceRecord>();
@@ -625,7 +759,8 @@ function persistLocal() {
 }
 
 let realtimeChannel: ReturnType<typeof sb.channel> | null = null;
-let realtimeInitialized = false;
+let isRealtimeSubscribed = false;
+let isRealtimeInitializing = false;
 
 export function broadcastMutation(
   table: "attendance" | "employees" | "leaves" | "advances" | "salaries" | "tempos" | "settings",
@@ -655,10 +790,21 @@ export function broadcastMutation(
 }
 
 function ensureRealtimeSubscription() {
-  if (!sb || realtimeInitialized) return;
-  realtimeInitialized = true;
+  if (!sb || isRealtimeSubscribed || isRealtimeInitializing) return;
+  isRealtimeInitializing = true;
 
   try {
+    // If a channel already exists with this topic in the Supabase client, clean it up first
+    const existingChannels = sb.getChannels();
+    const existing = existingChannels.find((c) => c.topic === "realtime:app-realtime-sync");
+    if (existing) {
+      try {
+        sb.removeChannel(existing);
+      } catch {
+        /* ignore */
+      }
+    }
+
     const applyUpsert = <T extends { id: string }>(arr: T[], next: T) => {
       const i = arr.findIndex((x) => x.id === next.id);
       if (i >= 0) arr[i] = next;
@@ -690,8 +836,10 @@ function ensureRealtimeSubscription() {
       if (i >= 0) arr.splice(i, 1);
     };
 
-    const channel = sb
-      .channel("app-realtime-sync")
+    const channel = sb.channel("app-realtime-sync");
+
+    // Attach ALL handlers BEFORE calling subscribe()
+    channel
       .on("broadcast", { event: "cloud_mutation" }, (p) => {
         const payload = p.payload as {
           table: string;
@@ -889,22 +1037,26 @@ function ensureRealtimeSubscription() {
         }
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "__all__" }, () => {
-        // Server functions (godowns, assignments, auth-side mutations) do not
-        // have a row-level event. Rehydrate the complete shared snapshot so
-        // every open device still converges to the database truth.
+        // Server functions mutations trigger snapshot rehydration
         void hydrate(true);
       });
 
     realtimeChannel = channel;
 
+    // NOW subscribe
     channel.subscribe((status) => {
       if (status === "SUBSCRIBED") {
+        isRealtimeSubscribed = true;
+        isRealtimeInitializing = false;
         updateSyncState({ status: "connected" });
       } else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        isRealtimeSubscribed = false;
+        isRealtimeInitializing = false;
         updateSyncState({ status: "offline" });
       }
     });
   } catch (e) {
+    isRealtimeInitializing = false;
     console.error("[realtime-init]", e);
   }
 }

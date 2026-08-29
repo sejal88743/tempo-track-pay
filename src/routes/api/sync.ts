@@ -39,7 +39,7 @@ async function snapshot() {
     dbQuery(
       `SELECT * FROM employees ${isAdmin ? "" : "WHERE active = true"} ORDER BY created_at DESC`,
     ),
-    dbQuery(`SELECT * FROM attendance ORDER BY attendance_date DESC LIMIT 20000`),
+    dbQuery(`SELECT * FROM attendance ORDER BY attendance_date DESC`),
     isAdmin ? dbQuery(`SELECT * FROM leaves ORDER BY created_at DESC`) : Promise.resolve([]),
     isAdmin ? dbQuery(`SELECT * FROM advances ORDER BY created_at DESC`) : Promise.resolve([]),
     isAdmin ? dbQuery(`SELECT * FROM salaries ORDER BY generated_at DESC`) : Promise.resolve([]),
