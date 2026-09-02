@@ -518,13 +518,14 @@ async function fetchAllRowsWithPagination(
   let all: Row[] = [];
   try {
     for (let page = 0; page < maxPages; page++) {
-      let q = sb
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let q: any = (sb as any)
         .from(table)
         .select("*")
         .order(orderBy, { ascending })
         .range(from, from + PAGE_SIZE - 1);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if (filter) q = (q as any).gte(filter.column, filter.gte);
+      if (filter) q = q.gte(filter.column, filter.gte);
+
       const { data, error } = await q;
 
       if (error) {
