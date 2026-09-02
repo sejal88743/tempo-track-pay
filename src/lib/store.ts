@@ -502,6 +502,7 @@ async function fetchAllRowsWithPagination(
   orderBy: string,
   ascending = false,
   maxPages = 50,
+  filter?: { column: string; gte: string },
 ): Promise<{ data: Row[] | null; error: unknown }> {
   if (!sb) return { data: null, error: new Error("No Supabase client") };
   const PAGE_SIZE = 1000;
@@ -509,11 +510,13 @@ async function fetchAllRowsWithPagination(
   let all: Row[] = [];
   try {
     for (let page = 0; page < maxPages; page++) {
-      const { data, error } = await sb
+      let q = sb
         .from(table)
         .select("*")
         .order(orderBy, { ascending })
         .range(from, from + PAGE_SIZE - 1);
+      if (filter) q = q.gte(filter.column, filter.gte);
+      const { data, error } = await q;
 
       if (error) {
         return { data: all.length > 0 ? all : null, error };
@@ -528,6 +531,7 @@ async function fetchAllRowsWithPagination(
     return { data: all.length > 0 ? all : null, error: err };
   }
 }
+
 
 /**
  * Dedicated month-based attendance fetcher to guarantee 100% complete data
