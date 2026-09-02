@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute } from "@tanstack/react-router";
+import { refreshCloud } from "@/lib/store";
 import { useState, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -474,7 +475,7 @@ function EmployeesPage() {
         onOpenChange={(o) => {
           if (!o) {
             setFaceEmp(null);
-            reload();
+            void refreshCloud();
           }
         }}
       />

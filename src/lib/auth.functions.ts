@@ -122,5 +122,10 @@ export const logout = createServerFn({ method: "POST" }).handler(async () => {
 });
 
 export const todayAdminFormulaHint = createServerFn({ method: "GET" }).handler(async () => {
-  return { formula: "DDMM + SECRET (e.g. 0706MANOJ)", today_prefix: todayDDMM_IST() };
+  return { formula: "DDMM + SECRET (e.g. 0706MANOJ)", today_prefix: (() => {
+    const ist = new Date(Date.now() + 5.5 * 3600 * 1000);
+    const dd = String(ist.getUTCDate()).padStart(2, "0");
+    const mm = String(ist.getUTCMonth() + 1).padStart(2, "0");
+    return `${dd}${mm}`;
+  })() };
 });

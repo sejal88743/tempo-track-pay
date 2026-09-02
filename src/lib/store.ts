@@ -523,7 +523,8 @@ async function fetchAllRowsWithPagination(
         .select("*")
         .order(orderBy, { ascending })
         .range(from, from + PAGE_SIZE - 1);
-      if (filter) q = q.gte(filter.column, filter.gte);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (filter) q = (q as any).gte(filter.column, filter.gte);
       const { data, error } = await q;
 
       if (error) {
