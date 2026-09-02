@@ -645,15 +645,25 @@ export async function hydrate(force = false): Promise<boolean> {
   updateSyncState({ status: "syncing" });
 
   try {
+    // Sirf recent window (default 180 din) full-load hoti hai — app fast rehti hai.
+    // Purane mahine/saal Reports & Salary page on-demand fetch karte hain.
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - ATTENDANCE_WINDOW_DAYS);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+
     const [emp, att, lv, adv, sal, tmp, st] = await Promise.all([
       sb.from("employees").select("*").order("created_at", { ascending: false }),
-      fetchAllRowsWithPagination("attendance", "attendance_date", false, 50),
+      fetchAllRowsWithPagination("attendance", "attendance_date", false, 50, {
+        column: "attendance_date",
+        gte: cutoffStr,
+      }),
       sb.from("leaves").select("*").order("created_at", { ascending: false }),
       sb.from("advances").select("*").order("created_at", { ascending: false }),
       sb.from("salaries").select("*").order("generated_at", { ascending: false }),
       sb.from("tempos").select("*").order("created_at", { ascending: false }),
       sb.from("settings").select("*").eq("key", "app_settings").maybeSingle(),
     ]);
+
 
     if (emp.error) {
       warn("employees.hydrate", emp.error);
