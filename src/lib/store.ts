@@ -499,8 +499,6 @@ const ATTENDANCE_WINDOW_DAYS = 180;
 let deltaCursor: string | null = null;
 let isDeltaSyncing = false;
 
-
-
 /**
  * Robust paginated fetcher to overcome Supabase PostgREST default 1000-row limit.
  * Iterates in batches of 1000 using .range() until all records are retrieved.
@@ -541,7 +539,6 @@ async function fetchAllRowsWithPagination(
     return { data: all.length > 0 ? all : null, error: err };
   }
 }
-
 
 /**
  * Dedicated month-based attendance fetcher to guarantee 100% complete data
@@ -674,7 +671,6 @@ export async function hydrate(force = false): Promise<boolean> {
       sb.from("settings").select("*").eq("key", "app_settings").maybeSingle(),
     ]);
 
-
     if (emp.error) {
       warn("employees.hydrate", emp.error);
     } else if (emp.data) {
@@ -786,7 +782,12 @@ export async function deltaSync(): Promise<boolean> {
       sb.from("advances").select("*").gt("created_at", since).limit(1000),
       sb.from("salaries").select("*").gt("generated_at", since).limit(1000),
       sb.from("tempos").select("*").gt("updated_at", since).limit(500),
-      sb.from("settings").select("*").eq("key", "app_settings").gt("updated_at", since).maybeSingle(),
+      sb
+        .from("settings")
+        .select("*")
+        .eq("key", "app_settings")
+        .gt("updated_at", since)
+        .maybeSingle(),
     ]);
 
     if (att.error || emp.error) {
@@ -871,7 +872,6 @@ export async function deltaSync(): Promise<boolean> {
 
 export function waitForInitialHydration(): Promise<boolean> {
   if (!initialHydratePromise) {
-
     initialHydratePromise = hydrate(true);
   }
   return initialHydratePromise;
@@ -1234,7 +1234,6 @@ if (isBrowser) {
     }
   }, 300000);
 }
-
 
 // Manual force sync (available to all components/pages)
 export async function refreshCloud(): Promise<boolean> {

@@ -30,7 +30,19 @@ export async function generateSalaries(month: string): Promise<SalaryRecord[]> {
     (l) => l.status === "approved" && l.from_date <= monthEnd && l.to_date >= monthStart,
   );
 
-  const advances = getAdvances().filter((a) => a.status === "approved" && !a.deducted);
+  const allAdv = getAdvances();
+  const advances = allAdv.filter((a) => {
+    if (a.status === "rejected") return false;
+    if (a.deducted && a.deducted_month === month) return true;
+    if (a.deducted && a.deducted_month && a.deducted_month !== month) return false;
+    if (!a.deducted) {
+      if (!a.date) return true;
+      const advMonth = a.date.slice(0, 7);
+      return advMonth <= month;
+    }
+    if (a.date && a.date.slice(0, 7) === month) return true;
+    return false;
+  });
 
   const overlapDays = (from: string, to: string) => {
     const a = new Date(Math.max(new Date(from).getTime(), new Date(monthStart).getTime()));
@@ -66,7 +78,7 @@ export async function generateSalaries(month: string): Promise<SalaryRecord[]> {
     }
 
     const myAdv = advances.filter((a) => a.employee_id === e.id);
-    const advance_deducted = myAdv.reduce((s, a) => s + a.amount, 0);
+    const calculatedAdv = myAdv.reduce((s, a) => s + (Number(a.amount) || 0), 0);
 
     const per = e.monthly_salary > 0 ? e.monthly_salary / total : 0;
 
@@ -78,9 +90,11 @@ export async function generateSalaries(month: string): Promise<SalaryRecord[]> {
     const gross = grossPresent + per * paid;
     const leave_deduction = per * unpaid;
     const exRow = existing.find((s) => s.employee_id === e.id && s.month === month);
+    const advance_deducted = calculatedAdv > 0 ? calculatedAdv : (exRow?.advance_deducted ?? 0);
     const bonus = exRow?.bonus ?? 0;
     const penalty = exRow?.penalty ?? 0;
-    const final_salary = Math.max(0, gross - leave_deduction - advance_deducted + bonus - penalty);
+    // Final Amount = Gross Salary - Advance Amount - Penalty + Bonus
+    const final_salary = Math.max(0, gross - advance_deducted + bonus - penalty);
 
     return {
       id: exRow?.id ?? newId(),
@@ -102,7 +116,6 @@ export async function generateSalaries(month: string): Promise<SalaryRecord[]> {
   });
 
   // Mark advances as deducted
-  const allAdv = getAdvances();
   let changed = false;
   for (const a of allAdv) {
     if (advances.some((d) => d.id === a.id)) {

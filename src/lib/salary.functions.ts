@@ -58,7 +58,8 @@ export const generateMonthlySalaries = createServerFn({ method: "POST" })
 
     const adv = await query<{ id: string; employee_id: string; amount: string }>(
       `SELECT id, employee_id, amount FROM advances
-       WHERE status = 'approved' AND deducted = false`,
+       WHERE status != 'rejected' AND (deducted = false OR deducted_in_month = $1)`,
+      [data.month],
     );
 
     const presentByEmp = new Map<string, number>();
