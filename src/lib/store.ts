@@ -493,6 +493,14 @@ let isHydrating = false;
 let lastHydrateTimestamp = 0;
 let initialHydratePromise: Promise<boolean> | null = null;
 
+/** Full hydrate me itne din ki attendance load hoti hai (baaki on-demand). */
+const ATTENDANCE_WINDOW_DAYS = 180;
+/** Delta sync cursor — is timestamp ke baad change hui rows hi laayi jaati hain. */
+let deltaCursor: string | null = null;
+let isDeltaSyncing = false;
+
+
+
 /**
  * Robust paginated fetcher to overcome Supabase PostgREST default 1000-row limit.
  * Iterates in batches of 1000 using .range() until all records are retrieved.
@@ -502,6 +510,7 @@ async function fetchAllRowsWithPagination(
   orderBy: string,
   ascending = false,
   maxPages = 50,
+  filter?: { column: string; gte: string },
 ): Promise<{ data: Row[] | null; error: unknown }> {
   if (!sb) return { data: null, error: new Error("No Supabase client") };
   const PAGE_SIZE = 1000;
@@ -509,11 +518,15 @@ async function fetchAllRowsWithPagination(
   let all: Row[] = [];
   try {
     for (let page = 0; page < maxPages; page++) {
-      const { data, error } = await sb
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let q: any = (sb as any)
         .from(table)
         .select("*")
         .order(orderBy, { ascending })
         .range(from, from + PAGE_SIZE - 1);
+      if (filter) q = q.gte(filter.column, filter.gte);
+
+      const { data, error } = await q;
 
       if (error) {
         return { data: all.length > 0 ? all : null, error };
@@ -528,6 +541,7 @@ async function fetchAllRowsWithPagination(
     return { data: all.length > 0 ? all : null, error: err };
   }
 }
+
 
 /**
  * Dedicated month-based attendance fetcher to guarantee 100% complete data
@@ -641,15 +655,25 @@ export async function hydrate(force = false): Promise<boolean> {
   updateSyncState({ status: "syncing" });
 
   try {
+    // Sirf recent window (default 180 din) full-load hoti hai — app fast rehti hai.
+    // Purane mahine/saal Reports & Salary page on-demand fetch karte hain.
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - ATTENDANCE_WINDOW_DAYS);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+
     const [emp, att, lv, adv, sal, tmp, st] = await Promise.all([
       sb.from("employees").select("*").order("created_at", { ascending: false }),
-      fetchAllRowsWithPagination("attendance", "attendance_date", false, 50),
+      fetchAllRowsWithPagination("attendance", "attendance_date", false, 50, {
+        column: "attendance_date",
+        gte: cutoffStr,
+      }),
       sb.from("leaves").select("*").order("created_at", { ascending: false }),
       sb.from("advances").select("*").order("created_at", { ascending: false }),
       sb.from("salaries").select("*").order("generated_at", { ascending: false }),
       sb.from("tempos").select("*").order("created_at", { ascending: false }),
       sb.from("settings").select("*").eq("key", "app_settings").maybeSingle(),
     ]);
+
 
     if (emp.error) {
       warn("employees.hydrate", emp.error);
@@ -711,7 +735,9 @@ export async function hydrate(force = false): Promise<boolean> {
     }
 
     lastHydrateTimestamp = Date.now();
+    deltaCursor = new Date(Date.now() - 10_000).toISOString();
     persistLocal();
+
     updateSyncState({
       status: "connected",
       lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
@@ -740,8 +766,112 @@ export async function hydrate(force = false): Promise<boolean> {
   }
 }
 
+/**
+ * Delta sync — sirf wahi rows laata hai jo pichhle sync ke baad badli hain.
+ * Ye poll/focus par chalta hai, isliye app fast rehti hai aur har device par
+ * data seconds me match ho jaata hai. Cursor na ho to full hydrate.
+ */
+export async function deltaSync(): Promise<boolean> {
+  if (!isBrowser || !sb) return false;
+  if (isHydrating || isDeltaSyncing) return false;
+  if (!deltaCursor) return hydrate(true);
+
+  isDeltaSyncing = true;
+  const since = deltaCursor;
+  try {
+    const [att, emp, lv, adv, sal, tmp, st] = await Promise.all([
+      sb.from("attendance").select("*").gt("updated_at", since).limit(2000),
+      sb.from("employees").select("*").gt("updated_at", since).limit(1000),
+      sb.from("leaves").select("*").gt("created_at", since).limit(1000),
+      sb.from("advances").select("*").gt("created_at", since).limit(1000),
+      sb.from("salaries").select("*").gt("generated_at", since).limit(1000),
+      sb.from("tempos").select("*").gt("updated_at", since).limit(500),
+      sb.from("settings").select("*").eq("key", "app_settings").gt("updated_at", since).maybeSingle(),
+    ]);
+
+    if (att.error || emp.error) {
+      // Delta fail — full hydrate par fallback
+      isDeltaSyncing = false;
+      return hydrate(true);
+    }
+
+    let changed = false;
+
+    if (att.data?.length) {
+      const map = new Map<string, AttendanceRecord>();
+      for (const r of cache.attendance) {
+        map.set(`${r.employee_id}_${normalizeDate(r.date)}_${r.shift || "morning"}`, r);
+      }
+      for (const row of att.data) {
+        const c = dbToAttendance(row as Row);
+        const rec = { ...c, date: normalizeDate(c.date), shift: c.shift || "morning" };
+        map.set(`${rec.employee_id}_${rec.date}_${rec.shift}`, rec);
+      }
+      cache.attendance = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+      changed = true;
+    }
+
+    const mergeById = <T extends { id: string }>(list: T[], incoming: T[]) => {
+      const map = new Map(list.map((x) => [x.id, x]));
+      for (const x of incoming) map.set(x.id, x);
+      return Array.from(map.values());
+    };
+
+    if (emp.data?.length) {
+      cache.employees = mergeById(cache.employees, emp.data.map(dbToEmployee));
+      changed = true;
+    }
+    if (lv.data?.length) {
+      cache.leaves = mergeById(cache.leaves, lv.data.map(dbToLeave));
+      changed = true;
+    }
+    if (adv.data?.length) {
+      cache.advances = mergeById(cache.advances, adv.data.map(dbToAdvance));
+      changed = true;
+    }
+    if (sal.data?.length) {
+      cache.salaries = mergeById(cache.salaries, sal.data.map(dbToSalary));
+      changed = true;
+    }
+    if (tmp.data?.length) {
+      cache.tempos = mergeById(cache.tempos, tmp.data.map(dbToTempo));
+      changed = true;
+    }
+    if (st.data?.value) {
+      cache.settings = { ...DEFAULT_SETTINGS, ...(st.data.value as AppSettings) };
+      changed = true;
+    }
+
+    deltaCursor = new Date(Date.now() - 10_000).toISOString();
+    lastHydrateTimestamp = Date.now();
+
+    if (changed) {
+      persistLocal();
+      bumpData();
+    }
+    updateSyncState({
+      status: "connected",
+      lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
+      pendingCount: loadPending().length,
+      errorMessage: undefined,
+    });
+    ensureRealtimeSubscription();
+    return true;
+  } catch (e) {
+    console.warn("[delta-sync]", e);
+    return false;
+  } finally {
+    isDeltaSyncing = false;
+  }
+}
+
 export function waitForInitialHydration(): Promise<boolean> {
   if (!initialHydratePromise) {
+
     initialHydratePromise = hydrate(true);
   }
   return initialHydratePromise;
@@ -860,7 +990,7 @@ function ensureRealtimeSubscription() {
           } else if (payload.action === "upsert" && payload.data) {
             applyAttendanceUpsert(cache.attendance, payload.data);
           } else {
-            void hydrate(true);
+            void deltaSync();
           }
           cache.attendance = [...cache.attendance];
         } else if (payload.table === "employees") {
@@ -869,7 +999,7 @@ function ensureRealtimeSubscription() {
           } else if (payload.action === "upsert" && payload.data) {
             applyUpsert(cache.employees, payload.data);
           } else {
-            void hydrate(true);
+            void deltaSync();
           }
           cache.employees = [...cache.employees];
         } else if (payload.table === "leaves") {
@@ -878,7 +1008,7 @@ function ensureRealtimeSubscription() {
           } else if (payload.action === "upsert" && payload.data) {
             applyUpsert(cache.leaves, payload.data);
           } else {
-            void hydrate(true);
+            void deltaSync();
           }
           cache.leaves = [...cache.leaves];
         } else if (payload.table === "advances") {
@@ -887,7 +1017,7 @@ function ensureRealtimeSubscription() {
           } else if (payload.action === "upsert" && payload.data) {
             applyUpsert(cache.advances, payload.data);
           } else {
-            void hydrate(true);
+            void deltaSync();
           }
           cache.advances = [...cache.advances];
         } else if (payload.table === "salaries") {
@@ -896,7 +1026,7 @@ function ensureRealtimeSubscription() {
           } else if (payload.action === "upsert" && payload.data) {
             applyUpsert(cache.salaries, payload.data);
           } else {
-            void hydrate(true);
+            void deltaSync();
           }
           cache.salaries = [...cache.salaries];
         } else if (payload.table === "tempos") {
@@ -905,14 +1035,14 @@ function ensureRealtimeSubscription() {
           } else if (payload.action === "upsert" && payload.data) {
             applyUpsert(cache.tempos, payload.data);
           } else {
-            void hydrate(true);
+            void deltaSync();
           }
           cache.tempos = [...cache.tempos];
         } else if (payload.table === "settings") {
           if (payload.data) {
             cache.settings = { ...DEFAULT_SETTINGS, ...payload.data };
           } else {
-            void hydrate(true);
+            void deltaSync();
           }
         }
 
@@ -1038,7 +1168,7 @@ function ensureRealtimeSubscription() {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "__all__" }, () => {
         // Server functions mutations trigger snapshot rehydration
-        void hydrate(true);
+        void deltaSync();
       });
 
     realtimeChannel = channel;
@@ -1069,21 +1199,31 @@ if (isBrowser) {
   // Multi-device sync triggers: fetch latest cloud updates on tab focus / visibility
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
-      void hydrate(true);
+      void deltaSync();
     }
   });
   window.addEventListener("focus", () => {
-    void hydrate(true);
+    void deltaSync();
   });
   window.addEventListener("online", () => {
     updateSyncState({ status: "syncing" });
-    void hydrate(true);
+    void deltaSync();
   });
   window.addEventListener("offline", () => {
     updateSyncState({ status: "offline" });
   });
 
-  // Background polling fallback every 15s when page is active to guarantee multi-device sync
+  // Fast delta poll every 8s (sirf badle hue rows) + safety full sync har 5 min
+  setInterval(() => {
+    if (
+      document.visibilityState === "visible" &&
+      typeof navigator !== "undefined" &&
+      navigator.onLine !== false
+    ) {
+      void deltaSync();
+    }
+  }, 8000);
+
   setInterval(() => {
     if (
       document.visibilityState === "visible" &&
@@ -1092,8 +1232,9 @@ if (isBrowser) {
     ) {
       void hydrate(true);
     }
-  }, 15000);
+  }, 300000);
 }
+
 
 // Manual force sync (available to all components/pages)
 export async function refreshCloud(): Promise<boolean> {
