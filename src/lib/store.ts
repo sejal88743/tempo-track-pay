@@ -733,7 +733,9 @@ export async function hydrate(force = false): Promise<boolean> {
     }
 
     lastHydrateTimestamp = Date.now();
+    deltaCursor = new Date(Date.now() - 10_000).toISOString();
     persistLocal();
+
     updateSyncState({
       status: "connected",
       lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
