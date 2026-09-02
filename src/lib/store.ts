@@ -493,6 +493,14 @@ let isHydrating = false;
 let lastHydrateTimestamp = 0;
 let initialHydratePromise: Promise<boolean> | null = null;
 
+/** Full hydrate me itne din ki attendance load hoti hai (baaki on-demand). */
+const ATTENDANCE_WINDOW_DAYS = 180;
+/** Delta sync cursor — is timestamp ke baad change hui rows hi laayi jaati hain. */
+let deltaCursor: string | null = null;
+let isDeltaSyncing = false;
+
+
+
 /**
  * Robust paginated fetcher to overcome Supabase PostgREST default 1000-row limit.
  * Iterates in batches of 1000 using .range() until all records are retrieved.
