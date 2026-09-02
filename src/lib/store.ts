@@ -1197,21 +1197,31 @@ if (isBrowser) {
   // Multi-device sync triggers: fetch latest cloud updates on tab focus / visibility
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
-      void hydrate(true);
+      void deltaSync();
     }
   });
   window.addEventListener("focus", () => {
-    void hydrate(true);
+    void deltaSync();
   });
   window.addEventListener("online", () => {
     updateSyncState({ status: "syncing" });
-    void hydrate(true);
+    void deltaSync();
   });
   window.addEventListener("offline", () => {
     updateSyncState({ status: "offline" });
   });
 
-  // Background polling fallback every 15s when page is active to guarantee multi-device sync
+  // Fast delta poll every 8s (sirf badle hue rows) + safety full sync har 5 min
+  setInterval(() => {
+    if (
+      document.visibilityState === "visible" &&
+      typeof navigator !== "undefined" &&
+      navigator.onLine !== false
+    ) {
+      void deltaSync();
+    }
+  }, 8000);
+
   setInterval(() => {
     if (
       document.visibilityState === "visible" &&
@@ -1220,8 +1230,9 @@ if (isBrowser) {
     ) {
       void hydrate(true);
     }
-  }, 15000);
+  }, 300000);
 }
+
 
 // Manual force sync (available to all components/pages)
 export async function refreshCloud(): Promise<boolean> {
