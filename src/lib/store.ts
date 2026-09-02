@@ -764,8 +764,112 @@ export async function hydrate(force = false): Promise<boolean> {
   }
 }
 
+/**
+ * Delta sync — sirf wahi rows laata hai jo pichhle sync ke baad badli hain.
+ * Ye poll/focus par chalta hai, isliye app fast rehti hai aur har device par
+ * data seconds me match ho jaata hai. Cursor na ho to full hydrate.
+ */
+export async function deltaSync(): Promise<boolean> {
+  if (!isBrowser || !sb) return false;
+  if (isHydrating || isDeltaSyncing) return false;
+  if (!deltaCursor) return hydrate(true);
+
+  isDeltaSyncing = true;
+  const since = deltaCursor;
+  try {
+    const [att, emp, lv, adv, sal, tmp, st] = await Promise.all([
+      sb.from("attendance").select("*").gt("updated_at", since).limit(2000),
+      sb.from("employees").select("*").gt("updated_at", since).limit(1000),
+      sb.from("leaves").select("*").gt("created_at", since).limit(1000),
+      sb.from("advances").select("*").gt("created_at", since).limit(1000),
+      sb.from("salaries").select("*").gt("generated_at", since).limit(1000),
+      sb.from("tempos").select("*").gt("updated_at", since).limit(500),
+      sb.from("settings").select("*").eq("key", "app_settings").gt("updated_at", since).maybeSingle(),
+    ]);
+
+    if (att.error || emp.error) {
+      // Delta fail — full hydrate par fallback
+      isDeltaSyncing = false;
+      return hydrate(true);
+    }
+
+    let changed = false;
+
+    if (att.data?.length) {
+      const map = new Map<string, AttendanceRecord>();
+      for (const r of cache.attendance) {
+        map.set(`${r.employee_id}_${normalizeDate(r.date)}_${r.shift || "morning"}`, r);
+      }
+      for (const row of att.data) {
+        const c = dbToAttendance(row as Row);
+        const rec = { ...c, date: normalizeDate(c.date), shift: c.shift || "morning" };
+        map.set(`${rec.employee_id}_${rec.date}_${rec.shift}`, rec);
+      }
+      cache.attendance = Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
+      changed = true;
+    }
+
+    const mergeById = <T extends { id: string }>(list: T[], incoming: T[]) => {
+      const map = new Map(list.map((x) => [x.id, x]));
+      for (const x of incoming) map.set(x.id, x);
+      return Array.from(map.values());
+    };
+
+    if (emp.data?.length) {
+      cache.employees = mergeById(cache.employees, emp.data.map(dbToEmployee));
+      changed = true;
+    }
+    if (lv.data?.length) {
+      cache.leaves = mergeById(cache.leaves, lv.data.map(dbToLeave));
+      changed = true;
+    }
+    if (adv.data?.length) {
+      cache.advances = mergeById(cache.advances, adv.data.map(dbToAdvance));
+      changed = true;
+    }
+    if (sal.data?.length) {
+      cache.salaries = mergeById(cache.salaries, sal.data.map(dbToSalary));
+      changed = true;
+    }
+    if (tmp.data?.length) {
+      cache.tempos = mergeById(cache.tempos, tmp.data.map(dbToTempo));
+      changed = true;
+    }
+    if (st.data?.value) {
+      cache.settings = { ...DEFAULT_SETTINGS, ...(st.data.value as AppSettings) };
+      changed = true;
+    }
+
+    deltaCursor = new Date(Date.now() - 10_000).toISOString();
+    lastHydrateTimestamp = Date.now();
+
+    if (changed) {
+      persistLocal();
+      bumpData();
+    }
+    updateSyncState({
+      status: "connected",
+      lastSyncedAt: new Date().toLocaleTimeString("en-IN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
+      pendingCount: loadPending().length,
+      errorMessage: undefined,
+    });
+    ensureRealtimeSubscription();
+    return true;
+  } catch (e) {
+    console.warn("[delta-sync]", e);
+    return false;
+  } finally {
+    isDeltaSyncing = false;
+  }
+}
+
 export function waitForInitialHydration(): Promise<boolean> {
   if (!initialHydratePromise) {
+
     initialHydratePromise = hydrate(true);
   }
   return initialHydratePromise;
