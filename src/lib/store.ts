@@ -988,7 +988,7 @@ function ensureRealtimeSubscription() {
           } else if (payload.action === "upsert" && payload.data) {
             applyAttendanceUpsert(cache.attendance, payload.data);
           } else {
-            void hydrate(true);
+            void deltaSync();
           }
           cache.attendance = [...cache.attendance];
         } else if (payload.table === "employees") {
@@ -997,7 +997,7 @@ function ensureRealtimeSubscription() {
           } else if (payload.action === "upsert" && payload.data) {
             applyUpsert(cache.employees, payload.data);
           } else {
-            void hydrate(true);
+            void deltaSync();
           }
           cache.employees = [...cache.employees];
         } else if (payload.table === "leaves") {
@@ -1006,7 +1006,7 @@ function ensureRealtimeSubscription() {
           } else if (payload.action === "upsert" && payload.data) {
             applyUpsert(cache.leaves, payload.data);
           } else {
-            void hydrate(true);
+            void deltaSync();
           }
           cache.leaves = [...cache.leaves];
         } else if (payload.table === "advances") {
@@ -1015,7 +1015,7 @@ function ensureRealtimeSubscription() {
           } else if (payload.action === "upsert" && payload.data) {
             applyUpsert(cache.advances, payload.data);
           } else {
-            void hydrate(true);
+            void deltaSync();
           }
           cache.advances = [...cache.advances];
         } else if (payload.table === "salaries") {
@@ -1024,7 +1024,7 @@ function ensureRealtimeSubscription() {
           } else if (payload.action === "upsert" && payload.data) {
             applyUpsert(cache.salaries, payload.data);
           } else {
-            void hydrate(true);
+            void deltaSync();
           }
           cache.salaries = [...cache.salaries];
         } else if (payload.table === "tempos") {
@@ -1033,14 +1033,14 @@ function ensureRealtimeSubscription() {
           } else if (payload.action === "upsert" && payload.data) {
             applyUpsert(cache.tempos, payload.data);
           } else {
-            void hydrate(true);
+            void deltaSync();
           }
           cache.tempos = [...cache.tempos];
         } else if (payload.table === "settings") {
           if (payload.data) {
             cache.settings = { ...DEFAULT_SETTINGS, ...payload.data };
           } else {
-            void hydrate(true);
+            void deltaSync();
           }
         }
 
@@ -1166,7 +1166,7 @@ function ensureRealtimeSubscription() {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "__all__" }, () => {
         // Server functions mutations trigger snapshot rehydration
-        void hydrate(true);
+        void deltaSync();
       });
 
     realtimeChannel = channel;
