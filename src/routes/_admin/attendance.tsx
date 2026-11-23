@@ -260,6 +260,7 @@ function AttendancePage() {
   const presentCount = Array.from(attMap.values()).filter((r) =>
     ["present", "late"].includes(r.status),
   ).length;
+  const halfCount = Array.from(attMap.values()).filter((r) => r.status === "half").length;
   const absentCount = Array.from(attMap.values()).filter((r) => r.status === "absent").length;
   const notMarked = employees.length - attMap.size;
 
@@ -287,6 +288,7 @@ function AttendancePage() {
           </div>
           <div className="flex gap-3 text-sm mt-0.5">
             <span className="text-green-600 font-medium">✅ Present: {presentCount}</span>
+            <span className="text-amber-600 font-medium">⚠️ Half: {halfCount}</span>
             <span className="text-red-500 font-medium">❌ Absent: {absentCount}</span>
             {notMarked > 0 && (
               <span className="text-muted-foreground">⬜ Unmarked: {notMarked}</span>
@@ -583,6 +585,23 @@ function AttendancePage() {
                         <Clock3 className="size-4" />
                       </button>
                       <button
+                        title="Half Attendance (1/2)"
+                        onClick={() =>
+                          update(e.id, {
+                            status: "half",
+                            in_time: a?.in_time ?? new Date().toISOString(),
+                            method: "manual",
+                          })
+                        }
+                        className={`px-2 py-1 rounded-lg transition-all text-xs font-bold ${
+                          status === "half"
+                            ? "bg-amber-600 text-white shadow"
+                            : "text-muted-foreground hover:bg-amber-100 hover:text-amber-700"
+                        }`}
+                      >
+                        1/2
+                      </button>
+                      <button
                         title="Absent"
                         onClick={() => update(e.id, { status: "absent", method: "manual" })}
                         className={`p-1.5 rounded-lg transition-all ${
@@ -600,10 +619,18 @@ function AttendancePage() {
                               ? "text-green-600"
                               : status === "late"
                                 ? "text-amber-600"
-                                : "text-red-500"
+                                : status === "half"
+                                  ? "text-amber-700 font-bold"
+                                  : "text-red-500"
                           }`}
                         >
-                          {status === "present" ? "Present" : status === "late" ? "Late" : "Absent"}
+                          {status === "present"
+                            ? "Present"
+                            : status === "late"
+                              ? "Late"
+                              : status === "half"
+                                ? "Half (1/2)"
+                                : "Absent"}
                         </span>
                       )}
                     </div>

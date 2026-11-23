@@ -135,7 +135,7 @@ function LoginPage() {
                   setFaceStatus("✅ Admin Face Verified! App khul raha hai...");
 
                   try {
-                    await adminFaceLogin({ data: { descriptor: Array.from(desc) } });
+                    await adminFaceLogin({ descriptor: Array.from(desc) });
                   } catch {
                     // Fallback to local session if offline
                   }
@@ -192,7 +192,7 @@ function LoginPage() {
     ).trim();
 
     try {
-      await adminLogin({ data: { password: inputClean } });
+      await adminLogin({ password: inputClean });
       setAdminLoggedIn(true);
       await refreshCloud();
       toast.success("Welcome, Admin!");

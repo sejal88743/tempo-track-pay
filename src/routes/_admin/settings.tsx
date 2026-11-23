@@ -120,7 +120,7 @@ function SettingsPage() {
   const createSheet = async () => {
     setSyncLoading(true);
     try {
-      const res = await createMasterSpreadsheet({ data: { title: "Transport Staff" } });
+      const res = await createMasterSpreadsheet({ title: "Transport Staff" });
       if (!res.ok || !res.spreadsheetId) {
         toast.error(res.error || "Sheets integration configure nahi hai");
         return;

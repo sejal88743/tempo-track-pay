@@ -21,7 +21,7 @@ const tempoSchema = z.object({
 });
 
 export const upsertTempo = createServerFn({ method: "POST" })
-  .inputValidator((d) => tempoSchema.parse(d))
+  .validator((d) => tempoSchema.parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { queryOne } = await import("@/integrations/supabase/client.server");
@@ -47,7 +47,7 @@ export const upsertTempo = createServerFn({ method: "POST" })
   });
 
 export const deleteTempo = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { execute } = await import("@/integrations/supabase/client.server");
@@ -56,7 +56,7 @@ export const deleteTempo = createServerFn({ method: "POST" })
   });
 
 export const listAssignmentsForDate = createServerFn({ method: "GET" })
-  .inputValidator((d) => z.object({ date: z.string() }).parse(d))
+  .validator((d) => z.object({ date: z.string() }).parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { query } = await import("@/integrations/supabase/client.server");
@@ -80,7 +80,7 @@ const assignSchema = z.object({
 });
 
 export const addAssignment = createServerFn({ method: "POST" })
-  .inputValidator((d) => assignSchema.parse(d))
+  .validator((d) => assignSchema.parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { queryOne, execute } = await import("@/integrations/supabase/client.server");
@@ -97,7 +97,7 @@ export const addAssignment = createServerFn({ method: "POST" })
   });
 
 export const removeAssignment = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { execute } = await import("@/integrations/supabase/client.server");

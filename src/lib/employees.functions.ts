@@ -32,7 +32,7 @@ const empSchema = z.object({
 });
 
 export const upsertEmployee = createServerFn({ method: "POST" })
-  .inputValidator((d) => empSchema.parse(d))
+  .validator((d) => empSchema.parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { queryOne } = await import("@/integrations/supabase/client.server");
@@ -80,7 +80,7 @@ export const upsertEmployee = createServerFn({ method: "POST" })
   });
 
 export const deleteEmployee = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { execute } = await import("@/integrations/supabase/client.server");
@@ -89,7 +89,7 @@ export const deleteEmployee = createServerFn({ method: "POST" })
   });
 
 export const setWorkerPassword = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
+  .validator((d) =>
     z.object({ employee_id: z.string().uuid(), password: z.string().min(4).max(200) }).parse(d),
   )
   .handler(async ({ data }) => {

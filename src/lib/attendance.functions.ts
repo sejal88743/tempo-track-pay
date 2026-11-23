@@ -7,7 +7,7 @@ const ensureAdmin = async () => {
 };
 
 export const listAttendanceForDate = createServerFn({ method: "GET" })
-  .inputValidator((d) => z.object({ date: z.string() }).parse(d))
+  .validator((d) => z.object({ date: z.string() }).parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { query } = await import("@/integrations/supabase/client.server");
@@ -34,7 +34,7 @@ const markSchema = z.object({
 });
 
 export const markAttendance = createServerFn({ method: "POST" })
-  .inputValidator((d) => markSchema.parse(d))
+  .validator((d) => markSchema.parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { execute } = await import("@/integrations/supabase/client.server");
@@ -65,9 +65,7 @@ export const markAttendance = createServerFn({ method: "POST" })
   });
 
 export const bulkMarkAbsent = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
-    z.object({ date: z.string(), shift: z.enum(["morning", "evening"]) }).parse(d),
-  )
+  .validator((d) => z.object({ date: z.string(), shift: z.enum(["morning", "evening"]) }).parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { query, execute } = await import("@/integrations/supabase/client.server");
@@ -85,7 +83,7 @@ export const bulkMarkAbsent = createServerFn({ method: "POST" })
   });
 
 export const runSundayRule = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ sundayDate: z.string() }).parse(d))
+  .validator((d) => z.object({ sundayDate: z.string() }).parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { query, execute } = await import("@/integrations/supabase/client.server");

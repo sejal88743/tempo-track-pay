@@ -47,7 +47,7 @@ async function gw(path: string, init?: { method?: string; body?: unknown }) {
 }
 
 export const createMasterSpreadsheet = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
+  .validator((d) =>
     z.object({ title: z.string().min(1).max(200).default("Transport Staff") }).parse(d),
   )
   .handler(async ({ data }) => {
@@ -154,7 +154,7 @@ const syncSchema = z.object({
 });
 
 export const syncTabToSheet = createServerFn({ method: "POST" })
-  .inputValidator((d) => syncSchema.parse(d))
+  .validator((d) => syncSchema.parse(d))
   .handler(async ({ data }) => {
     try {
       const keys = getApiKeysOptional();

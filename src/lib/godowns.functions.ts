@@ -23,7 +23,7 @@ const godownSchema = z.object({
 });
 
 export const upsertGodown = createServerFn({ method: "POST" })
-  .inputValidator((d) => godownSchema.parse(d))
+  .validator((d) => godownSchema.parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { queryOne } = await import("@/integrations/supabase/client.server");
@@ -58,7 +58,7 @@ export const upsertGodown = createServerFn({ method: "POST" })
   });
 
 export const deleteGodown = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ id: z.string().uuid() }).parse(d))
+  .validator((d) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { execute } = await import("@/integrations/supabase/client.server");

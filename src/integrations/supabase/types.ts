@@ -510,7 +510,7 @@ export type Database = {
     };
     Enums: {
       app_role: "admin" | "worker";
-      attendance_status: "present" | "absent" | "late";
+      attendance_status: "present" | "absent" | "late" | "half";
       leave_type: "casual" | "sick" | "paid" | "unpaid";
       request_status: "pending" | "approved" | "rejected";
       salary_type: "monthly" | "daily";
@@ -637,7 +637,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "worker"],
-      attendance_status: ["present", "absent", "late"],
+      attendance_status: ["present", "absent", "late", "half"],
       leave_type: ["casual", "sick", "paid", "unpaid"],
       request_status: ["pending", "approved", "rejected"],
       salary_type: ["monthly", "daily"],

@@ -12,7 +12,7 @@ function daysInMonth(month: string) {
 }
 
 export const listSalaries = createServerFn({ method: "GET" })
-  .inputValidator((d) => z.object({ month: z.string() }).parse(d))
+  .validator((d) => z.object({ month: z.string() }).parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { query } = await import("@/integrations/supabase/client.server");
@@ -26,7 +26,7 @@ export const listSalaries = createServerFn({ method: "GET" })
   });
 
 export const generateMonthlySalaries = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }).parse(d))
+  .validator((d) => z.object({ month: z.string().regex(/^\d{4}-\d{2}$/) }).parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { query, execute } = await import("@/integrations/supabase/client.server");
@@ -39,8 +39,13 @@ export const generateMonthlySalaries = createServerFn({ method: "POST" })
     );
     if (!emps.length) return { ok: true, count: 0 };
 
-    const att = await query<{ employee_id: string; status: string }>(
-      `SELECT employee_id, status FROM attendance
+    const att = await query<{
+      employee_id: string;
+      attendance_date: string;
+      status: string;
+      daily_salary_override: string | null;
+    }>(
+      `SELECT employee_id, attendance_date, status, daily_salary_override FROM attendance
        WHERE attendance_date >= $1 AND attendance_date <= $2 AND shift = 'morning'`,
       [monthStart, monthEnd],
     );
@@ -62,11 +67,19 @@ export const generateMonthlySalaries = createServerFn({ method: "POST" })
       [data.month],
     );
 
-    const presentByEmp = new Map<string, number>();
+    // Group attendance by employee and date
+    const attByEmp = new Map<
+      string,
+      Array<{ attendance_date: string; status: string; daily_salary_override: number | null }>
+    >();
     att.forEach((r) => {
-      if (r.status === "present" || r.status === "late") {
-        presentByEmp.set(r.employee_id, (presentByEmp.get(r.employee_id) ?? 0) + 1);
-      }
+      if (!attByEmp.has(r.employee_id)) attByEmp.set(r.employee_id, []);
+      attByEmp.get(r.employee_id)!.push({
+        attendance_date: r.attendance_date,
+        status: r.status,
+        daily_salary_override:
+          r.daily_salary_override != null ? Number(r.daily_salary_override) : null,
+      });
     });
 
     const advByEmp = new Map<string, { sum: number; ids: string[] }>();
@@ -94,11 +107,38 @@ export const generateMonthlySalaries = createServerFn({ method: "POST" })
     });
 
     for (const e of emps) {
-      const present = presentByEmp.get(e.id) ?? 0;
+      const myRawAtt = attByEmp.get(e.id) ?? [];
+      const dateMap = new Map<string, { status: string; daily_salary_override: number | null }>();
+      for (const r of myRawAtt) {
+        const d = r.attendance_date;
+        const prev = dateMap.get(d);
+        if (!prev || r.status === "present" || r.status === "late") {
+          dateMap.set(d, r);
+        } else if (r.status === "half" && prev.status !== "present" && prev.status !== "late") {
+          dateMap.set(d, r);
+        }
+      }
+      const attRecordsList = Array.from(dateMap.values());
+      let present = 0;
+      for (const r of attRecordsList) {
+        if (r.status === "present" || r.status === "late") present += 1.0;
+        else if (r.status === "half") present += 0.5;
+      }
+
       const paid = paidByEmp.get(e.id) ?? 0;
       const unpaid = unpaidByEmp.get(e.id) ?? 0;
       const per = Number(e.monthly_salary) / total;
-      const gross = per * (present + paid);
+
+      const grossPresent = attRecordsList.reduce((sum, r) => {
+        const dayRate = r.daily_salary_override != null ? r.daily_salary_override : per;
+        if (r.status === "present" || r.status === "late") {
+          return sum + dayRate;
+        } else if (r.status === "half") {
+          return sum + dayRate / 2;
+        }
+        return sum;
+      }, 0);
+      const gross = grossPresent + per * paid;
       const leave_deduction = per * unpaid;
       const advance_deducted = advByEmp.get(e.id)?.sum ?? 0;
       const final_salary = Math.max(0, gross - leave_deduction - advance_deducted);
@@ -143,7 +183,7 @@ export const generateMonthlySalaries = createServerFn({ method: "POST" })
   });
 
 export const updateSalaryRow = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
+  .validator((d) =>
     z
       .object({
         id: z.string().uuid(),

@@ -121,6 +121,8 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
   });
   const [isBulkSaving, setIsBulkSaving] = useState(false);
 
+  const [displayMode, setDisplayMode] = useState<"days" | "amount">("days");
+
   // Timer ref for distinguishing single-click vs double-click
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -152,13 +154,13 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
       if (!m.has(a.employee_id)) m.set(a.employee_id, new Map());
       const empDateMap = m.get(a.employee_id)!;
       const prev = empDateMap.get(dd);
-      // Give highest priority to 'present' and 'late'
+      // Priority: present/late > half > absent
       if (!prev) {
         empDateMap.set(dd, a.status);
-      } else if (a.status === "present") {
+      } else if (a.status === "present" || a.status === "late") {
         empDateMap.set(dd, "present");
-      } else if (a.status === "late" && prev !== "present") {
-        empDateMap.set(dd, "late");
+      } else if (a.status === "half" && prev !== "present" && prev !== "late") {
+        empDateMap.set(dd, "half");
       }
     }
     return m;
@@ -201,9 +203,10 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
     return new Date(y, mo - 1, parseInt(dd)).getDay() === 0;
   }
 
-  function getCell(empId: string, dd: string): "present" | "leave" | "absent" | "none" {
+  function getCell(empId: string, dd: string): "present" | "leave" | "absent" | "half" | "none" {
     const attStatus = attMap.get(empId)?.get(dd);
     if (attStatus === "present" || attStatus === "late") return "present";
+    if (attStatus === "half") return "half";
     if (attStatus === "absent") return "absent";
     if (leaveMap.get(empId)?.has(dd)) return "leave";
     return "none";
@@ -212,9 +215,33 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
   function totalPresent(empId: string) {
     let count = 0;
     for (const dd of dates) {
-      if (getCell(empId, dd) === "present") count++;
+      const c = getCell(empId, dd);
+      if (c === "present") count += 1.0;
+      else if (c === "half") count += 0.5;
     }
     return count;
+  }
+
+  function getCellDisplay(empId: string, dd: string, cell: string) {
+    if (displayMode === "days") {
+      if (cell === "present") return "1";
+      if (cell === "half") return "1/2";
+      if (cell === "absent") return "-";
+      if (cell === "leave") return "*";
+      return "";
+    } else {
+      const emp = emps.find((e) => e.id === empId);
+      const per = emp && emp.monthly_salary > 0 ? Number(emp.monthly_salary) / totalDays : 0;
+      const rec = getAttendance().find(
+        (a) => a.employee_id === empId && normalizeDate(a.date) === normalizeDate(`${month}-${dd}`),
+      );
+      const dayRate = rec?.daily_salary_override != null ? Number(rec.daily_salary_override) : per;
+      if (cell === "present") return Math.round(dayRate);
+      if (cell === "half") return Math.round(dayRate / 2);
+      if (cell === "absent") return 0;
+      if (cell === "leave") return "*";
+      return "";
+    }
   }
 
   // Sorting for Monthly Matrix: Worker Name, Role, Total
@@ -274,23 +301,45 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
     [month],
   );
 
-  // Single click → absent (0); double click → present (1)
+  // Click cycles: present -> half -> absent -> cleared -> present
   const handleCellClick = useCallback(
-    (empId: string, dd: string) => {
+    async (empId: string, dd: string) => {
       if (!editMode) return;
-      if (clickTimerRef.current) {
-        // second click — it's a double-click, cancel the pending single-click action
-        clearTimeout(clickTimerRef.current);
-        clickTimerRef.current = null;
-        void markCell(empId, dd, "present");
+      const dateStr = `${month}-${dd}`;
+      const normDateStr = normalizeDate(dateStr);
+      const all = getAttendance();
+      const existing = all.find(
+        (a) => a.employee_id === empId && normalizeDate(a.date) === normDateStr,
+      );
+      const current = existing?.status;
+      let next: "present" | "half" | "absent" | null = null;
+      if (!current || current === "absent") next = "present";
+      else if (current === "present" || current === "late") next = "half";
+      else if (current === "half") next = "absent";
+      else next = null;
+
+      if (next === null) {
+        if (existing) {
+          await import("@/lib/store").then(({ deleteAttendance }) => deleteAttendance(existing.id));
+        }
       } else {
-        clickTimerRef.current = setTimeout(() => {
-          clickTimerRef.current = null;
-          void markCell(empId, dd, "absent");
-        }, 280);
+        const isPresent = next === "present" || next === "half";
+        const record: AttendanceRecord = {
+          id: existing?.id ?? newId(),
+          employee_id: empId,
+          date: normDateStr,
+          shift: existing?.shift ?? "morning",
+          status: next,
+          in_time: isPresent ? (existing?.in_time ?? new Date().toISOString()) : undefined,
+          out_time: isPresent ? existing?.out_time : undefined,
+          method: "manual",
+          marked_by: "admin",
+        };
+        await upsertAttendance(record);
       }
+      setRevision((r) => r + 1);
     },
-    [editMode, markCell],
+    [editMode, month],
   );
 
   // Bulk: Mark selected workers (or all) Present/Absent on target day with fast Supabase Sync
@@ -502,6 +551,24 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
         <Button variant="outline" size="sm" onClick={printMatrix}>
           <Printer className="size-3.5 mr-1" /> Print
         </Button>
+        <div className="flex items-center gap-1.5 bg-muted p-1 rounded-lg">
+          <Button
+            size="sm"
+            variant={displayMode === "days" ? "default" : "ghost"}
+            className="h-7 text-xs px-2.5"
+            onClick={() => setDisplayMode("days")}
+          >
+            Days (1, 1/2)
+          </Button>
+          <Button
+            size="sm"
+            variant={displayMode === "amount" ? "default" : "ghost"}
+            className="h-7 text-xs px-2.5"
+            onClick={() => setDisplayMode("amount")}
+          >
+            Amount (₹)
+          </Button>
+        </div>
         {editMode && (
           <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 text-amber-900 text-xs px-3 py-1.5 rounded-lg ml-auto font-medium">
             <Pencil className="size-3.5 text-amber-600" />
@@ -789,10 +856,11 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
                     const cell = getCell(e.id, dd);
                     const sun = isSunday(dd);
                     const editable = editMode && cell !== "leave";
+                    const displayVal = getCellDisplay(e.id, dd, cell);
                     const cellProps = editable
                       ? {
                           onClick: () => handleCellClick(e.id, dd),
-                          title: "Click: Absent (0) | Double-click: Present (1)",
+                          title: "Click to cycle: Present (1) -> Half (1/2) -> Absent (-) -> Clear",
                           style: { cursor: "pointer" },
                         }
                       : {};
@@ -804,7 +872,17 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
                           className={`border border-border text-center font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100/90 dark:bg-emerald-950/50 present ${editable ? "hover:brightness-90 select-none" : ""}`}
                           {...cellProps}
                         >
-                          1
+                          {displayVal}
+                        </td>
+                      );
+                    if (cell === "half")
+                      return (
+                        <td
+                          key={dd}
+                          className={`border border-border text-center font-bold text-amber-800 dark:text-amber-300 bg-amber-100/90 dark:bg-amber-950/50 half ${editable ? "hover:brightness-90 select-none" : ""}`}
+                          {...cellProps}
+                        >
+                          {displayVal}
                         </td>
                       );
                     if (cell === "leave")
@@ -813,7 +891,7 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
                           key={dd}
                           className="border border-border text-center font-bold text-amber-700 dark:text-amber-400 bg-yellow-100/90 dark:bg-yellow-950/50 leave"
                         >
-                          *
+                          {displayVal}
                         </td>
                       );
                     if (cell === "absent")
@@ -823,7 +901,7 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
                           className={`border border-border text-center font-semibold text-rose-600 dark:text-rose-400 bg-rose-100/80 dark:bg-rose-950/40 absent ${editable ? "hover:brightness-90 select-none" : ""}`}
                           {...cellProps}
                         >
-                          -
+                          {displayVal}
                         </td>
                       );
                     // not marked
@@ -832,7 +910,9 @@ function MonthlyMatrix({ month, editMode }: { month: string; editMode: boolean }
                         key={dd}
                         className={`border border-border text-center ${sun ? "bg-slate-100 dark:bg-slate-800/60" : ""} ${editable ? "hover:bg-amber-50/70 select-none" : ""}`}
                         {...cellProps}
-                      />
+                      >
+                        {displayVal}
+                      </td>
                     );
                   })}
                   <td

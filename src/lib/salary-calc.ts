@@ -61,12 +61,16 @@ export async function generateSalaries(month: string): Promise<SalaryRecord[]> {
       const prev = dateMap.get(d);
       if (!prev || r.status === "present" || r.status === "late") {
         dateMap.set(d, r);
+      } else if (r.status === "half" && prev.status !== "present" && prev.status !== "late") {
+        dateMap.set(d, r);
       }
     }
-    const presentAtt = Array.from(dateMap.values()).filter(
-      (r) => r.status === "present" || r.status === "late",
-    );
-    const present = presentAtt.length;
+    const attRecordsList = Array.from(dateMap.values());
+    let present = 0;
+    for (const r of attRecordsList) {
+      if (r.status === "present" || r.status === "late") present += 1.0;
+      else if (r.status === "half") present += 0.5;
+    }
 
     const myLeaves = leaves.filter((l) => l.employee_id === e.id);
     let paid = 0,
@@ -83,9 +87,15 @@ export async function generateSalaries(month: string): Promise<SalaryRecord[]> {
     const per = e.monthly_salary > 0 ? e.monthly_salary / total : 0;
 
     // If a day has daily_salary_override set, use that fixed amount for that day
-    // Otherwise use normal per-day rate
-    const grossPresent = presentAtt.reduce((sum, r) => {
-      return sum + (r.daily_salary_override != null ? r.daily_salary_override : per);
+    // Otherwise use normal per-day rate. For half status, take 50%.
+    const grossPresent = attRecordsList.reduce((sum, r) => {
+      const dayRate = r.daily_salary_override != null ? r.daily_salary_override : per;
+      if (r.status === "present" || r.status === "late") {
+        return sum + dayRate;
+      } else if (r.status === "half") {
+        return sum + dayRate / 2;
+      }
+      return sum;
     }, 0);
     const gross = grossPresent + per * paid;
     const leave_deduction = per * unpaid;

@@ -28,7 +28,7 @@ export const getSettings = createServerFn({ method: "GET" }).handler(async () =>
 });
 
 export const setSetting = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ key: z.string().min(1).max(100), value: z.unknown() }).parse(d))
+  .validator((d) => z.object({ key: z.string().min(1).max(100), value: z.unknown() }).parse(d))
   .handler(async ({ data }) => {
     await ensureAdmin();
     const { execute } = await import("@/integrations/supabase/client.server");
@@ -41,7 +41,7 @@ export const setSetting = createServerFn({ method: "POST" })
   });
 
 export const updateAdminSecret = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
+  .validator((d) =>
     z
       .object({
         secret: z

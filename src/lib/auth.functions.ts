@@ -9,7 +9,7 @@ export const getCurrentSession = createServerFn({ method: "GET" }).handler(async
 });
 
 export const adminLogin = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ password: z.string().min(1).max(200) }).parse(d))
+  .validator((d) => z.object({ password: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data }) => {
     const { queryOne } = await import("@/integrations/supabase/client.server");
     const { createSession } = await import("./session.server");
@@ -57,7 +57,7 @@ export const adminLogin = createServerFn({ method: "POST" })
   });
 
 export const adminFaceLogin = createServerFn({ method: "POST" })
-  .inputValidator((d) => z.object({ descriptor: z.array(z.number()).min(64) }).parse(d))
+  .validator((d) => z.object({ descriptor: z.array(z.number()).min(64) }).parse(d))
   .handler(async ({ data }) => {
     const { queryOne } = await import("@/integrations/supabase/client.server");
     const { createSession } = await import("./session.server");
@@ -87,7 +87,7 @@ export const adminFaceLogin = createServerFn({ method: "POST" })
   });
 
 export const workerLogin = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
+  .validator((d) =>
     z
       .object({
         employee_code: z.string().min(1).max(64),

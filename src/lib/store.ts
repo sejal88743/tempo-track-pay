@@ -50,7 +50,7 @@ export type AttendanceRecord = {
   employee_id: string;
   date: string;
   shift: "morning" | "evening";
-  status: "present" | "absent" | "late";
+  status: "present" | "absent" | "late" | "half";
   in_time?: string;
   out_time?: string;
   location_ok?: boolean;

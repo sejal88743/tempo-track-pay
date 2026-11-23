@@ -17,7 +17,7 @@ export const listLeaves = createServerFn({ method: "GET" }).handler(async () => 
 });
 
 export const decideLeave = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
+  .validator((d) =>
     z.object({ id: z.string().uuid(), status: z.enum(["approved", "rejected"]) }).parse(d),
   )
   .handler(async ({ data }) => {
@@ -32,7 +32,7 @@ export const decideLeave = createServerFn({ method: "POST" })
   });
 
 export const adminCreateLeave = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
+  .validator((d) =>
     z
       .object({
         employee_id: z.string().uuid(),
@@ -74,7 +74,7 @@ export const listAdvances = createServerFn({ method: "GET" }).handler(async () =
 });
 
 export const decideAdvance = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
+  .validator((d) =>
     z.object({ id: z.string().uuid(), status: z.enum(["approved", "rejected"]) }).parse(d),
   )
   .handler(async ({ data }) => {
@@ -85,7 +85,7 @@ export const decideAdvance = createServerFn({ method: "POST" })
   });
 
 export const adminCreateAdvance = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
+  .validator((d) =>
     z
       .object({
         employee_id: z.string().uuid(),
@@ -108,7 +108,7 @@ export const adminCreateAdvance = createServerFn({ method: "POST" })
   });
 
 export const myApplyLeave = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
+  .validator((d) =>
     z
       .object({
         leave_type: z.enum(["casual", "sick", "paid", "unpaid"]),
@@ -131,7 +131,7 @@ export const myApplyLeave = createServerFn({ method: "POST" })
   });
 
 export const myRequestAdvance = createServerFn({ method: "POST" })
-  .inputValidator((d) =>
+  .validator((d) =>
     z
       .object({
         amount: z.number().positive(),
